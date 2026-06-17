@@ -1,0 +1,3689 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Emulador SOFC con Red Neuronal y Modo Fijo</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js"></script>
+
+  <script src="./inverse_model_inverso_nuevo.js"></script>
+  <script src="./sigma_model_log_spline_nuevo.js"></script>
+
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #ffffff; margin: 0; padding: 18px; text-align: center; }
+    h1 { color: #00d2ff; margin-bottom: 14px; }
+    .dashboard { max-width: 1500px; margin: auto; }
+    .card { background: #1e1e1e; padding: 18px; border-radius: 12px; margin-bottom: 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.45); }
+
+    .tfg-sofc-header {
+      position: relative;
+      overflow: hidden;
+      margin: 22px 0 18px;
+      border: 1px solid rgba(210, 136, 240, 0.42);
+      border-radius: 12px;
+      background:
+        radial-gradient(circle at 50% 0%, rgba(210, 136, 240, 0.2), transparent 58%),
+        linear-gradient(135deg, rgba(31, 13, 43, 0.98), rgba(75, 28, 94, 0.96));
+      box-shadow: 0 18px 50px rgba(0,0,0,0.38), 0 0 26px rgba(142, 68, 173, 0.15);
+      text-align: center;
+    }
+
+    .tfg-sofc-header::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 3px;
+      background: linear-gradient(90deg, #8e44ad, #d288f0, #b96ad9);
+      box-shadow: 0 0 14px rgba(210, 136, 240, 0.5);
+    }
+
+    .tfg-sofc-header h1 {
+      margin: 0;
+      padding: 25px 28px 7px;
+      color: #ffffff;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      letter-spacing: 0;
+      text-shadow: 0 0 18px rgba(210, 136, 240, 0.24);
+    }
+
+    .tfg-sofc-header > .comsol-student-credit {
+      display: flex;
+      width: max-content;
+      margin: 0 auto 10px;
+      text-shadow: 0 1px 2px #000000;
+    }
+
+    .sofc-connection-panel {
+      padding: 14px 18px 20px;
+      border-top: 0;
+      background: transparent;
+    }
+
+    .sofc-connection-panel,
+    .sofc-connection-panel button,
+    .sofc-connection-panel p,
+    .sofc-connection-panel p span {
+      -webkit-text-stroke: 0.35px #000000;
+      text-shadow:
+        -1px -1px 0 #000000,
+        1px -1px 0 #000000,
+        -1px 1px 0 #000000,
+        1px 1px 0 #000000;
+    }
+
+    .sofc-connection-panel p { margin: 10px 0 0; }
+    .sofc-connection-panel #btnConectar { background: linear-gradient(135deg, #8e44ad, #b96ad9); }
+    .sofc-connection-panel #btnConectar:not(:disabled):hover { background: linear-gradient(135deg, #7d3c98, #a956c8); }
+    .sofc-connection-panel #btnDesconectar:disabled {
+      border: 1px solid rgba(255,255,255,0.18);
+      background: #56505a !important;
+      color: #f4eef7 !important;
+      opacity: 1;
+    }
+
+    .grid-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .caja-valor { background: #2a2a2a; padding: 14px; border-radius: 8px; border-left: 5px solid #00d2ff; transition: all 0.3s ease; }
+    .caja-valor span { display: block; font-size: 1.7em; font-weight: bold; color: #4CAF50; margin-top: 8px; }
+    .caja-ia { border-left-color: #8e44ad; } .caja-ia span { color: #d288f0; }
+
+    .alarma-activa { background: #420b0b !important; border: 2px solid #ff5252 !important; animation: parpadeo 1s infinite; }
+    .input-error { background-color: #420b0b !important; color: white !important; border-color: #ff5252 !important; }
+    @keyframes parpadeo { 0% { opacity: 1; } 50% { opacity: 0.8; } 100% { opacity: 1; } }
+
+    button { 
+        background: #007bff; color: white; border: none; padding: 10px 18px; 
+        font-size: 0.98em; border-radius: 6px; cursor: pointer; margin: 4px; font-weight: 600; 
+        transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    button:disabled { background: #444 !important; color: #888 !important; cursor: not-allowed; box-shadow: none; transform: none !important; }
+    button:not(:disabled):hover { background: #0056b3; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+    button:not(:disabled):active { transform: translateY(1px); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+
+    .btn-verde { background: #28a745; } .btn-verde:not(:disabled):hover { background: #218838; }
+    .btn-rojo { background: #dc3545; } .btn-rojo:not(:disabled):hover { background: #c82333; }
+    .btn-info { background: #8e44ad; } .btn-info:not(:disabled):hover { background: #732d91; }
+    .btn-registro { background: #f39c12; padding: 12px; width: 100%; margin-top: 10px; font-size: 1.1em; border-radius: 8px; }
+    .btn-registro:not(:disabled):hover { background: #e67e22; }
+
+    .layout-main { display: grid; grid-template-columns: 380px 1fr; gap: 18px; align-items: stretch; margin-bottom: 18px; }
+    .columna-izquierda { display: flex; flex-direction: column; gap: 18px; }
+    .columna-derecha { display: flex; flex-direction: column; gap: 18px; }
+
+    .panel-parametros { 
+        text-align: left; border: 2px solid #8e44ad; box-sizing: border-box; transition: all 0.3s ease;
+        display: flex; flex-direction: column; justify-content: space-between; flex-grow: 1;
+        margin-bottom: 0;
+    }
+    .panel-exportar { display: flex; flex-direction: column; justify-content: center; margin-bottom: 0; text-align: left;}
+
+    .param-block { background: #252525; border-radius: 10px; padding: 14px; margin-bottom: 12px; } 
+    .param-title { font-size: 0.95em; color: #cdb5d7; margin-bottom: 8px; font-weight: 600; }
+    .param-minmax { display: flex; justify-content: space-between; font-size: 0.78em; color: #cdb5d7; margin-bottom: 6px; }
+    .param-minmax > span { white-space: nowrap; }
+    .minmax-unit { color: #cdb5d7; }
+    .param-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+
+    input[type="range"] {
+      width: 100%;
+      height: 24px;
+      margin: 0;
+      background: transparent;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 6px;
+      border: 1px solid rgba(210, 136, 240, 0.4);
+      border-radius: 999px;
+      background: linear-gradient(90deg, #3b2941, #64406f);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.55);
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      width: 18px;
+      height: 18px;
+      margin-top: -7px;
+      border: 2px solid #efd5f9;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #d288f0, #8e44ad);
+      box-shadow: 0 2px 7px rgba(0,0,0,0.48), 0 0 8px rgba(210, 136, 240, 0.28);
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-moz-range-track {
+      height: 6px;
+      border: 1px solid rgba(210, 136, 240, 0.4);
+      border-radius: 999px;
+      background: linear-gradient(90deg, #3b2941, #64406f);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.55);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 15px;
+      height: 15px;
+      border: 2px solid #efd5f9;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #d288f0, #8e44ad);
+      box-shadow: 0 2px 7px rgba(0,0,0,0.48), 0 0 8px rgba(210, 136, 240, 0.28);
+    }
+
+    input[type="range"]:focus-visible {
+      outline: 2px solid rgba(210, 136, 240, 0.75);
+      outline-offset: 2px;
+      border-radius: 999px;
+    }
+
+    input[type="number"] { width: 100%; padding: 7px 4px; font-size: 0.88em; text-align: center; border-radius: 6px; border: 1px solid #444; background: #333; color: white; box-sizing: border-box; font-weight: bold; transition: all 0.3s ease;}
+    .input-unit-wrapper { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
+    .input-unit-wrapper input[type="number"] { flex: 0 0 112px; width: 112px; }
+    .input-unit-wrapper[data-display] input[type="number"] { color: transparent; caret-color: #ffffff; }
+    .input-unit-wrapper[data-display]::before {
+      content: attr(data-display);
+      position: absolute;
+      left: 0;
+      top: 50%;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 112px;
+      padding: 0 4px;
+      box-sizing: border-box;
+      color: #ffffff;
+      font-size: 0.88em;
+      font-weight: 700;
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+    .input-unit-wrapper:focus-within::before { display: none; }
+    .input-unit-wrapper:focus-within input[type="number"] { color: #ffffff; }
+    .unit-box { flex: 0 0 auto; font-size: 0.8em; color: #cdb5d7; margin: 0; text-align: left; white-space: nowrap; }
+
+    .sigma-box { background: linear-gradient(135deg, #2b1144, #4e1d63); border: 1px solid #a92ad6; border-radius: 10px; padding: 16px; margin-bottom: 12px; text-align: left; }
+    .sigma-box h4 { margin: 0 0 8px 0; color: #e47eff; font-size: 1em; }
+    .sigma-box .sigma-value { font-size: 1.35em; font-weight: bold; color: #ffffff; margin-bottom: 4px; }
+    .sigma-box .sigma-desc { font-size: 0.82em; color: #ecd7f4; }
+
+    .estado-container { display: flex; justify-content: space-around; align-items: center; background: #161616; padding: 15px; border-radius: 10px; border: 1px solid #333; margin-bottom: 18px;}
+    .step-pill { padding: 8px 18px; border-radius: 20px; background: #2a2a2a; color: #555; font-weight: bold; font-size: 0.9em; border: 2px solid #444; transition: 0.4s; }
+    .step-active { background: #00d2ff; color: #000; border-color: #00a8cc; box-shadow: 0 0 10px rgba(0,210,255,0.3); transform: scale(1.02); }
+
+    .panel-curvas { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .panel-resistencias { grid-column: span 2; }
+
+    .contenedor-grafico { position: relative; width: 100%; height: 320px; }
+    .contenedor-grafico-ia { position: relative; width: 100%; height: 450px; }
+    .contenedor-grafico-resistencia { position: relative; width: 100%; height: 200px; }
+    .contenedor-historico { position: relative; width: 100%; height: 750px; }
+
+    canvas { background: #1e1e1e; border-radius: 8px; width: 100% !important; height: 100% !important; }
+
+    .panel-modo-mejorado { background: #1e1e1e; border: 2px solid #444; text-align: left; transition: all 0.3s ease; }
+    .modos-wrapper { display: flex; gap: 15px; margin-bottom: 15px; }
+    .radio-modo { flex: 1; position: relative; cursor: pointer; }
+    .radio-modo input { position: absolute; opacity: 0; cursor: pointer; height: 0; width: 0; }
+    .radio-modo span { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 15px; background: #252525; border: 2px solid #333; border-radius: 8px; font-weight: bold; font-size: 1.1em; color: #888; transition: all 0.2s ease; }
+
+    .radio-modo.ia input:checked ~ span { background: rgba(142, 68, 173, 0.15); border-color: #d288f0; color: #d288f0; }
+    .radio-modo.fijo input:checked ~ span { background: rgba(76, 175, 80, 0.15); border-color: #4CAF50; color: #4CAF50; }
+
+    .box-fijo-animado { display: none; background: #252525; padding: 15px; border-radius: 10px; border-left: 5px solid #4CAF50; animation: slideDown 0.3s ease-out; }
+    .box-fijo-animado .param-row { grid-template-columns: minmax(0, 1fr) auto 120px; }
+    #panelVoltajeFijo .param-title,
+    #panelVoltajeFijo .param-minmax,
+    #panelVoltajeFijo .unit-box { color: #4CAF50; }
+    #panelVoltajeFijo input[type="range"]::-webkit-slider-runnable-track {
+      border-color: rgba(76, 175, 80, 0.72);
+      background: linear-gradient(90deg, #244a2d, #4CAF50);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.55), 0 0 8px rgba(76, 175, 80, 0.18);
+    }
+    #panelVoltajeFijo input[type="range"]::-webkit-slider-thumb {
+      border-color: #d7f5da;
+      background: linear-gradient(135deg, #75d37b, #2e8b3c);
+      box-shadow: 0 2px 7px rgba(0,0,0,0.48), 0 0 9px rgba(76, 175, 80, 0.35);
+    }
+    #panelVoltajeFijo input[type="range"]::-moz-range-track {
+      border-color: rgba(76, 175, 80, 0.72);
+      background: linear-gradient(90deg, #244a2d, #4CAF50);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.55), 0 0 8px rgba(76, 175, 80, 0.18);
+    }
+    #panelVoltajeFijo input[type="range"]::-moz-range-thumb {
+      border-color: #d7f5da;
+      background: linear-gradient(135deg, #75d37b, #2e8b3c);
+      box-shadow: 0 2px 7px rgba(0,0,0,0.48), 0 0 9px rgba(76, 175, 80, 0.35);
+    }
+    #panelVoltajeFijo input[type="range"]:focus-visible {
+      outline-color: rgba(76, 175, 80, 0.85);
+    }
+    @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+    .formula-inline { color: #ff8a65; font-weight: 700; white-space: nowrap; }
+
+    .panel-tiempo-real { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+
+    .botones-accion { display: flex; flex-direction: column; gap: 8px; }
+    .botones-accion button { width: 100% !important; box-sizing: border-box; margin: 0; padding: 10px; }
+
+    #monitorSerie { width: 100%; height: 200px; background: #000; color: #0f0; font-family: 'Courier New', Courier, monospace; overflow-y: scroll; padding: 10px; border-radius: 8px; border: 1px solid #444; box-sizing: border-box; text-align: left; font-size: 0.9em; line-height: 1.4; }
+
+    .btn-apagado {
+        background: #b00020;
+        color: white;
+        border: 2px solid #ff5252;
+        font-size: 1.05em;
+        padding: 12px;
+        border-radius: 8px;
+        font-weight: bold;
+        width: 100%;
+        margin-top: 8px;
+    }
+
+    .btn-apagado:not(:disabled):hover {
+        background: #7a0015;
+    }
+
+    .btn-start {
+        background: #28a745;
+        color: white;
+        border: 2px solid #4CAF50;
+        font-size: 1.05em;
+        padding: 12px;
+        border-radius: 8px;
+        font-weight: bold;
+        width: 100%;
+        margin-top: 8px;
+    }
+
+    .btn-start:not(:disabled):hover {
+        background: #218838;
+    }
+
+    .modo-seguro-activo {
+        background: #420b0b !important;
+        border-color: #ff5252 !important;
+        box-shadow: 0 0 18px rgba(255, 82, 82, 0.45);
+    }
+
+    @media (max-width: 1100px) { 
+      .layout-main, .panel-curvas, .panel-tiempo-real { grid-template-columns: 1fr; } 
+      .modos-wrapper { flex-direction: column; }
+      .panel-resistencias { grid-column: span 1; }
+    }
+
+    @media (max-width: 600px) {
+      .tfg-sofc-header h1 { padding: 22px 18px 16px; }
+      .box-fijo-animado .param-row { grid-template-columns: 1fr; }
+      .box-fijo-animado .input-unit-wrapper { justify-self: end; }
+    }
+
+    .tfg-tab-switcher {
+      max-width: 1500px;
+      display: flex;
+      gap: 10px;
+      margin: 0 auto 18px;
+      padding: 7px;
+      box-sizing: border-box;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.32);
+    }
+
+    .tfg-tab {
+      flex: 1;
+      margin: 0;
+      padding: 13px 20px;
+      background: #292929;
+      border: 1px solid #3c3c3c;
+      color: #aeb6bf;
+      letter-spacing: 0.02em;
+    }
+
+    .tfg-tab.active,
+    .tfg-tab.active:not(:disabled):hover {
+      background: linear-gradient(135deg, #007bff, #00a8cc);
+      border-color: #00d2ff;
+      color: #ffffff;
+      box-shadow: 0 0 16px rgba(0,210,255,0.22);
+    }
+
+    .tfg-comsol-dashboard {
+      max-width: 1500px;
+      margin: auto;
+      color: #172233;
+      text-align: left;
+      animation: comsol-fade-slide 0.45s ease both;
+    }
+
+    .tfg-comsol-header {
+      position: relative;
+      overflow: hidden;
+      margin: 22px 0 16px;
+      padding: 24px 28px;
+      border: 1px solid rgba(63, 181, 215, 0.35);
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(5, 31, 48, 0.96), rgba(16, 76, 91, 0.92)),
+        linear-gradient(90deg, rgba(55, 183, 144, 0.22), rgba(0, 210, 255, 0.18));
+      box-shadow: 0 18px 50px rgba(0,0,0,0.28);
+      text-align: center;
+    }
+
+    .tfg-comsol-header::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0 0;
+      height: 3px;
+      background: linear-gradient(90deg, #00d2ff, #37b790, #ffc857);
+    }
+
+    .tfg-comsol-header h1 {
+      margin: 0 0 7px;
+      color: #ffffff;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      letter-spacing: 0;
+    }
+
+    .tfg-comsol-subtitle {
+      max-width: 880px;
+      margin: 0;
+      color: #d9f4fb;
+      font-size: 1.02em;
+      line-height: 1.55;
+    }
+
+    .comsol-student-credit {
+      display: inline-flex;
+      margin-top: 14px;
+      padding: 7px 11px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      font-size: 0.86em;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .comsol-study-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .comsol-study-card {
+      position: relative;
+      min-height: 116px;
+      margin: 0;
+      padding: 16px;
+      overflow: hidden;
+      border: 1px solid #c8d6e1;
+      border-radius: 8px;
+      background: linear-gradient(145deg, #ffffff, #edf6fb);
+      color: #1d2b3c;
+      text-align: left;
+      box-shadow: 0 10px 26px rgba(5, 31, 48, 0.12);
+    }
+
+    .comsol-study-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+      background: #94a8b8;
+      transition: background 0.25s ease;
+    }
+
+    .comsol-study-card:not(:disabled):hover {
+      background: linear-gradient(145deg, #ffffff, #e5f7fb);
+      border-color: #62c7df;
+      transform: translateY(-2px);
+      box-shadow: 0 15px 34px rgba(0, 88, 122, 0.2);
+    }
+
+    .comsol-study-card.comsol-active {
+      border-color: #00a8cc;
+      background: linear-gradient(145deg, #e7fbff, #ffffff);
+      box-shadow: 0 0 0 1px rgba(0,210,255,0.22), 0 16px 36px rgba(0, 110, 140, 0.18);
+    }
+
+    .comsol-study-card.comsol-active::before { background: linear-gradient(#00d2ff, #37b790); }
+    .comsol-study-label { display: block; color: #53687a; font-size: 0.76em; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    .comsol-study-temp { display: block; margin-top: 8px; color: #0f4055; font-size: 1.72em; font-weight: 800; }
+    .comsol-study-status { display: block; margin-top: 7px; color: #657887; font-size: 0.86em; line-height: 1.35; }
+
+    .comsol-dashboard-grid {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0;
+      align-items: start;
+    }
+
+    .comsol-navigation-panel,
+    .comsol-results-panel {
+      border: 1px solid #c9d8e3;
+      border-radius: 12px;
+      background: #f7fafc;
+      box-shadow: 0 18px 46px rgba(0,0,0,0.18);
+    }
+
+    .comsol-navigation-panel {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 10;
+      width: 285px;
+      height: 100%;
+      max-height: 100%;
+      box-sizing: border-box;
+      overflow-x: hidden;
+      overflow-y: auto;
+      border: 0;
+      border-right: 1px solid rgba(15, 64, 85, 0.2);
+      border-radius: 12px 0 0 12px;
+      background: rgba(247, 250, 252, 0.92);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(-100%);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 4px 0 24px rgba(0,0,0,0.15);
+      transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease;
+    }
+
+    .comsol-dashboard-grid.comsol-nav-open .comsol-navigation-panel {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0);
+    }
+
+    .comsol-navigation-trigger {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      z-index: 11;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 172px;
+      margin: 0;
+      padding: 0;
+      border: 1px solid rgba(15, 64, 85, 0.24);
+      border-left: 0;
+      border-radius: 0 10px 10px 0;
+      background: rgba(15, 64, 85, 0.88);
+      color: #ffffff;
+      opacity: 0.45;
+      cursor: pointer;
+      transform: translateY(-50%);
+      box-shadow: 3px 0 14px rgba(0,0,0,0.12);
+      transition: opacity 0.25s ease, background-color 0.25s ease;
+    }
+
+    .comsol-navigation-trigger:hover,
+    .comsol-navigation-trigger:focus-visible {
+      background: rgba(18, 111, 130, 0.96);
+      opacity: 1;
+    }
+
+    .comsol-navigation-trigger span {
+      display: block;
+      white-space: nowrap;
+      font-size: 0.78em;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      transform: rotate(-90deg);
+    }
+
+    .comsol-dashboard-grid.comsol-nav-open .comsol-navigation-trigger {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .comsol-navigation-header {
+      position: relative;
+      overflow: hidden;
+      padding: 16px 46px 16px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      background: linear-gradient(135deg, #0f4055, #126f82);
+      color: #ffffff;
+    }
+
+    .comsol-navigation-close {
+      position: absolute;
+      top: 9px;
+      right: 9px;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      margin: 0;
+      padding: 0;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+      color: #ffffff;
+      font-size: 1.35rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .comsol-navigation-close:hover,
+    .comsol-navigation-close:focus-visible {
+      background: rgba(255,255,255,0.24);
+      border-color: rgba(255,255,255,0.55);
+    }
+
+    .comsol-navigation-header::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 3px;
+      background: linear-gradient(90deg, #00d2ff, #37b790);
+    }
+
+    .comsol-navigation-eyebrow {
+      display: block;
+      margin-bottom: 5px;
+      color: #bfeef7;
+      font-size: 0.7em;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .comsol-navigation-header h2,
+    .comsol-panel-header h2 {
+      margin: 0;
+      color: inherit;
+      font-size: 1.05em;
+      letter-spacing: 0;
+    }
+
+    .comsol-panel-header h2 {
+      font-size: clamp(1.35rem, 2vw, 1.75rem);
+      font-weight: 800;
+    }
+
+    .comsol-result-tabs {
+      display: grid;
+      gap: 7px;
+      padding: 10px;
+      background:
+        radial-gradient(circle at 100% 0, rgba(0, 210, 255, 0.08), transparent 38%),
+        rgba(247, 250, 252, 0.82);
+    }
+
+    .comsol-result-tabs-title {
+      margin: 2px 4px 4px;
+      color: #657586;
+      font-size: 0.7em;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .comsol-result-tab {
+      position: relative;
+      display: flex;
+      align-items: center;
+      min-height: 42px;
+      width: 100%;
+      margin: 0;
+      padding: 9px 30px 9px 14px;
+      overflow: hidden;
+      border: 1px solid #d3e0e7;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #ffffff, #f2f7fa);
+      color: #263746;
+      text-align: left;
+      line-height: 1.3;
+      box-shadow: 0 5px 14px rgba(22, 52, 71, 0.06);
+    }
+
+    .comsol-result-tab::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+      background: #9bb1be;
+      transition: width 0.2s ease, background 0.2s ease;
+    }
+
+    .comsol-result-tab::after {
+      content: "›";
+      position: absolute;
+      right: 13px;
+      color: #89a0ad;
+      font-size: 1.35em;
+      font-weight: 400;
+      transition: transform 0.2s ease, color 0.2s ease;
+    }
+
+    .comsol-result-tab:not(:disabled):hover {
+      background: linear-gradient(135deg, #ffffff, #e8f8fb);
+      border-color: #72cfe2;
+      color: #0f4055;
+      transform: translateX(3px);
+      box-shadow: 0 9px 20px rgba(0, 110, 140, 0.12);
+    }
+
+    .comsol-result-tab:not(:disabled):hover::before {
+      width: 6px;
+      background: #00a8cc;
+    }
+
+    .comsol-result-tab:not(:disabled):hover::after {
+      color: #00a8cc;
+      transform: translateX(2px);
+    }
+
+    .comsol-result-tab.comsol-active {
+      border-color: #00a8cc;
+      background: linear-gradient(135deg, #0f4055, #117d92);
+      color: #ffffff;
+      box-shadow: 0 12px 24px rgba(0, 88, 122, 0.25);
+    }
+
+    .comsol-result-tab.comsol-active::before {
+      width: 6px;
+      background: #37e0b0;
+    }
+
+    .comsol-result-tab.comsol-active::after {
+      color: #c9f8ff;
+    }
+
+    .comsol-results-panel {
+      position: relative;
+      width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      background: #ffffff;
+    }
+
+    .comsol-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      padding: 16px 18px;
+      border-bottom: 1px solid #d8e2ea;
+      background: linear-gradient(135deg, #ffffff, #edf6fb);
+    }
+
+    .comsol-status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 5px 10px;
+      border: 1px solid #d5e0e8;
+      border-radius: 999px;
+      background: #f6fafc;
+      color: #6b7b88;
+      font-size: 0.82em;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .comsol-status.comsol-status-loaded { border-color: #a8dfc5; color: #1c7f56; background: #eefaf4; }
+    .comsol-status.comsol-status-error { border-color: #efb0b0; color: #9d2727; background: #fff5f5; }
+    .comsol-status.comsol-status-pending { border-color: #e8d29a; color: #8a6417; background: #fff8e6; }
+
+    .comsol-result-body {
+      min-height: 780px;
+      padding: 16px;
+      background: linear-gradient(180deg, #f7fafc, #edf3f7);
+    }
+
+    .comsol-viewer-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 220px;
+      overflow: hidden;
+      border: 1px solid #c8d6e1;
+      border-radius: 8px;
+      background: #f8fbfd;
+      animation: comsol-scale-in 0.28s ease both;
+    }
+
+    .comsol-viewer-stage {
+      position: relative;
+      min-width: 0;
+      height: clamp(720px, 76vh, 850px);
+      overflow: hidden;
+      border-right: 1px solid #c8d6e1;
+      background:
+        linear-gradient(145deg, #ffffff 0%, #edf4f8 56%, #dce8ef 100%);
+      overscroll-behavior: contain;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    #comsol-model-viewer {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      --poster-color: transparent;
+      animation: comsol-fade-slide 0.32s ease both;
+      cursor: grab;
+      overscroll-behavior: contain;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    #comsol-model-viewer:active { cursor: grabbing; }
+
+    .comsol-viewer-badge {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      padding: 6px 9px;
+      border: 1px solid rgba(15,64,85,0.18);
+      border-radius: 6px;
+      background: rgba(255,255,255,0.78);
+      color: #31566b;
+      font-size: 0.72em;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      pointer-events: none;
+      text-transform: uppercase;
+    }
+
+    .comsol-viewer-help {
+      position: absolute;
+      bottom: 14px;
+      left: 14px;
+      z-index: 3;
+      max-width: calc(100% - 28px);
+      padding: 7px 10px;
+      box-sizing: border-box;
+      border: 1px solid rgba(15,64,85,0.18);
+      border-radius: 6px;
+      background: rgba(255,255,255,0.82);
+      color: #31566b;
+      font-size: 0.74em;
+      font-weight: 700;
+      line-height: 1.35;
+      pointer-events: none;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .comsol-viewer-tools,
+    .comsol-image-tools {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 4;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      justify-content: flex-end;
+    }
+
+    .comsol-viewer-tools {
+      left: auto;
+      width: max-content;
+      max-width: calc(100% - 150px);
+      padding: 7px;
+      box-sizing: border-box;
+      border: 1px solid rgba(15,64,85,0.16);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.72);
+      box-shadow: 0 7px 20px rgba(15,64,85,0.12);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .comsol-tool-button,
+    .comsol-filter-button {
+      margin: 0;
+      border-radius: 7px;
+      box-shadow: none;
+      font-size: 0.84em;
+    }
+
+    .comsol-tool-button {
+      padding: 8px 10px;
+      border: 1px solid rgba(15,64,85,0.22);
+      background: rgba(255,255,255,0.86);
+      color: #143447;
+      backdrop-filter: blur(8px);
+    }
+
+    .comsol-tool-button:not(:disabled):hover {
+      background: #e8f8fb;
+      color: #0f4055;
+      box-shadow: none;
+    }
+
+    .comsol-tool-button.comsol-rotation-active {
+      border-color: #00a8cc;
+      color: #0c728a;
+    }
+
+    .comsol-model-error {
+      position: absolute;
+      left: 50%;
+      bottom: 22px;
+      width: min(660px, calc(100% - 44px));
+      padding: 14px 16px;
+      box-sizing: border-box;
+      transform: translateX(-50%);
+      border: 1px solid #e39999;
+      border-radius: 8px;
+      background: rgba(255,245,245,0.97);
+      color: #8d2020;
+      font-size: 0.9em;
+      line-height: 1.45;
+      box-shadow: 0 12px 24px rgba(80,20,20,0.15);
+    }
+
+    .comsol-model-error[hidden] { display: none; }
+    .comsol-model-error code {
+      color: inherit;
+      font-family: Consolas, 'Courier New', monospace;
+    }
+
+    .comsol-model-error.comsol-parametric-error {
+      top: 50%;
+      bottom: auto;
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+
+    .comsol-parametric-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      justify-items: center;
+      align-items: center;
+      margin-bottom: 14px;
+      padding: 16px 18px;
+      border: 1px solid #b8d8e3;
+      border-left: 4px solid #00a8cc;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #ffffff, #eaf6f9);
+      color: #263746;
+      box-shadow: 0 10px 24px rgba(5, 31, 48, 0.09);
+      animation: comsol-fade-slide 0.28s ease both;
+    }
+
+    .comsol-parametric-panel > div:first-child { display: none; }
+
+    .comsol-parametric-title {
+      display: block;
+      margin: 0 0 5px;
+      color: #0f4055;
+      font-size: 1em;
+      font-weight: 800;
+    }
+
+    .comsol-parametric-description {
+      margin: 0;
+      color: #607181;
+      font-size: 0.86em;
+      line-height: 1.45;
+    }
+
+    .comsol-parametric-controls {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      width: min(100%, 780px);
+      margin: 0 auto;
+    }
+
+    .comsol-parametric-field,
+    .comsol-parametric-fixed {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px 11px;
+      border: 1px solid #d2e0e7;
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    .comsol-parametric-field span,
+    .comsol-parametric-fixed span {
+      color: #657586;
+      font-size: 0.72em;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .comsol-parametric-select {
+      width: 100%;
+      min-width: 0;
+      padding: 8px 9px;
+      border: 1px solid #a9c6d2;
+      border-radius: 6px;
+      background: #ffffff;
+      color: #172233;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .comsol-parametric-select:focus {
+      border-color: #00a8cc;
+      outline: 2px solid rgba(0, 168, 204, 0.18);
+      outline-offset: 1px;
+    }
+
+    .comsol-parametric-fixed strong {
+      color: #0f4055;
+      font-size: 0.98em;
+      line-height: 34px;
+    }
+
+    .comsol-jpeg-legend {
+      align-items: center;
+      text-align: center;
+    }
+
+    .comsol-jpeg-legend-title {
+      margin: 0 0 5px;
+      color: #143447;
+      font-size: 0.98em;
+      line-height: 1.35;
+    }
+
+    .comsol-jpeg-species-key {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px;
+      width: 170px;
+      margin: 12px auto -8px;
+    }
+
+    .comsol-jpeg-species-key span {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      padding: 6px 5px;
+      border: 1px solid #c9d8e3;
+      border-radius: 6px;
+      background: #f4f9fb;
+      color: #143447;
+      font-size: 0.78em;
+      font-weight: 800;
+      line-height: 1.15;
+      white-space: nowrap;
+    }
+
+    .comsol-jpeg-species-key small {
+      color: #657887;
+      font-size: 0.78em;
+      font-weight: 700;
+    }
+
+    .comsol-jpeg-species-key sub,
+    .comsol-mesh-details sub {
+      font-size: 0.68em;
+      line-height: 0;
+      vertical-align: sub;
+      text-transform: none;
+    }
+
+    .comsol-jpeg-species-key .comsol-species-o2 {
+      border-top: 3px solid #00a8cc;
+    }
+
+    .comsol-jpeg-species-key .comsol-species-h2 {
+      border-top: 3px solid #d94b4b;
+    }
+
+    .comsol-jpeg-legend-crop {
+      position: relative;
+      margin: 16px auto 4px;
+      overflow: hidden;
+      border: 1px solid #d6e0e7;
+      border-radius: 6px;
+      background: #ffffff;
+      box-shadow: inset 0 0 0 1px rgba(15, 64, 85, 0.04);
+    }
+
+    .comsol-jpeg-legend-image {
+      position: absolute;
+      right: 0;
+      display: block;
+      width: auto;
+      max-width: none;
+      object-fit: contain;
+      object-position: right center;
+      transition: opacity 0.2s ease;
+    }
+
+    .comsol-jpeg-legend-n2_h2o .comsol-jpeg-legend-crop {
+      width: 155px;
+      height: 560px;
+    }
+
+    .comsol-jpeg-legend-n2_h2o .comsol-jpeg-legend-image {
+      top: -10px;
+      right: 0;
+      height: 105%;
+    }
+
+    .comsol-jpeg-legend-h2_o2 .comsol-jpeg-legend-crop {
+      width: 170px;
+      height: 520px;
+    }
+
+    .comsol-jpeg-legend-h2_o2 .comsol-jpeg-legend-image {
+      top: -25px;
+      right: -20px;
+      height: 110%;
+    }
+
+    .comsol-jpeg-legend-lineas_h2_o2 .comsol-jpeg-legend-crop {
+      width: 170px;
+      height: 520px;
+    }
+
+    .comsol-jpeg-legend-lineas_h2_o2 .comsol-jpeg-legend-image {
+      top: -50px;
+      right: -12px;
+      height: 105%;
+    }
+
+    .comsol-jpeg-legend-lineas_n2_h2o .comsol-jpeg-legend-crop {
+      width: 182px;
+      height: 520px;
+    }
+
+    .comsol-jpeg-legend-lineas_n2_h2o .comsol-jpeg-legend-image {
+      top: -50px;
+      right: -8px;
+      height: 110%;
+    }
+
+    .comsol-jpeg-legend-velocity .comsol-jpeg-legend-crop {
+      width: 170px;
+      height: 520px;
+    }
+
+    .comsol-jpeg-legend-velocity .comsol-jpeg-legend-image {
+      top: -50px;
+      right: -30px;
+      height: 110%;
+    }
+
+    .comsol-jpeg-legend-image.comsol-loading { opacity: 0.25; }
+    .comsol-jpeg-legend-image[hidden] { display: none; }
+
+    .comsol-jpeg-legend-fallback {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      box-sizing: border-box;
+      background: linear-gradient(145deg, #f7fafc, #edf4f8);
+      color: #7b5960;
+      font-size: 0.8em;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    .comsol-jpeg-legend-fallback[hidden] { display: none; }
+
+    .comsol-jpeg-legend .comsol-mesh-details {
+      display: none;
+    }
+
+    .comsol-jpeg-legend .comsol-legend-note { display: none; }
+
+    .comsol-legend {
+      display: flex;
+      flex-direction: column;
+      padding: 20px 16px;
+      background: #ffffff;
+      color: #263746;
+    }
+
+    .comsol-legend h3 {
+      margin: 0 0 6px;
+      color: #143447;
+      font-size: 0.92em;
+      line-height: 1.35;
+    }
+
+    .comsol-legend-unit { color: #657887; font-size: 0.78em; line-height: 1.4; }
+
+    .comsol-legend-scale {
+      display: flex;
+      flex: 1;
+      gap: 11px;
+      justify-content: center;
+      min-height: 430px;
+      margin: 20px 0 14px;
+    }
+
+    .comsol-legend-bar {
+      width: 30px;
+      border: 1px solid rgba(20,50,70,0.25);
+      border-radius: 4px;
+      background: linear-gradient(to top, #0536c7 0%, #00b5ff 28%, #13c87a 51%, #f4e93f 74%, #ef2b22 100%);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.3);
+    }
+
+    .comsol-legend-values {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: #344d60;
+      font-size: 0.8em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .comsol-legend-note,
+    .comsol-mesh-details {
+      padding-top: 12px;
+      border-top: 1px solid #d6dee6;
+      color: #657887;
+      font-size: 0.78em;
+      line-height: 1.45;
+    }
+
+    .comsol-mesh-details {
+      display: grid;
+      gap: 10px;
+      margin-top: 18px;
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .comsol-polarization-shell {
+      border: 1px solid #c8d6e1;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #ffffff;
+      animation: comsol-scale-in 0.28s ease both;
+    }
+
+    .comsol-polarization-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border-bottom: 1px solid #d8e2ea;
+      background: #f8fbfd;
+    }
+
+    .comsol-filter-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .comsol-overpotential-filter-row {
+      display: flex;
+      flex: 1;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 10px;
+    }
+
+    .comsol-overpotential-field,
+    .comsol-overpotential-meta {
+      display: flex;
+      min-width: 180px;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .comsol-overpotential-field span,
+    .comsol-overpotential-meta span {
+      color: #657586;
+      font-size: 0.72em;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .comsol-overpotential-meta {
+      min-height: 38px;
+      justify-content: center;
+      padding: 7px 10px;
+      box-sizing: border-box;
+      border: 1px solid #d2e0e7;
+      border-radius: 7px;
+      background: #ffffff;
+      color: #0f4055;
+    }
+
+    .comsol-overpotential-description {
+      width: 100%;
+      color: #607181;
+      font-size: 0.82em;
+      line-height: 1.4;
+    }
+
+    .comsol-filter-button {
+      padding: 8px 10px;
+      border: 1px solid #d2dfe7;
+      background: #ffffff;
+      color: #263746;
+    }
+
+    .comsol-filter-button:not(:disabled):hover {
+      background: #eef9fc;
+      border-color: #87d7e8;
+      color: #0f4055;
+      box-shadow: none;
+    }
+
+    .comsol-filter-button.comsol-active {
+      border-color: #00a8cc;
+      background: #0f4055;
+      color: #ffffff;
+    }
+
+    .comsol-image-tool-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      justify-content: flex-end;
+    }
+
+    .comsol-image-stage {
+      position: relative;
+      display: grid;
+      place-items: center;
+      height: clamp(640px, 74vh, 860px);
+      padding: 18px;
+      box-sizing: border-box;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 15% 18%, rgba(0, 210, 255, 0.16), transparent 32%),
+        linear-gradient(135deg, rgba(12, 25, 37, 0.98), rgba(28, 47, 59, 0.98)),
+        linear-gradient(90deg, rgba(55, 183, 144, 0.12), rgba(0, 210, 255, 0.1));
+      cursor: default;
+      overscroll-behavior: contain;
+      touch-action: none;
+    }
+
+    .comsol-image-stage.comsol-draggable { cursor: grab; }
+    .comsol-image-stage.comsol-dragging { cursor: grabbing; }
+    .comsol-image-stage:fullscreen,
+    .comsol-viewer-stage:fullscreen {
+      width: 100vw;
+      height: 100vh;
+      border: 0;
+    }
+
+    .comsol-polarization-image {
+      display: block;
+      min-width: 0;
+      min-height: 0;
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      object-position: center center;
+      user-select: none;
+      will-change: transform;
+      transform-origin: center center;
+      transition: opacity 0.22s ease, transform 0.18s ease;
+      filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.28));
+    }
+
+    .comsol-polarization-image.comsol-loading { opacity: 0.35; }
+
+    .comsol-image-error {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: min(520px, calc(100% - 40px));
+      padding: 18px 20px;
+      box-sizing: border-box;
+      transform: translate(-50%, -50%);
+      border: 1px solid #e39999;
+      border-radius: 8px;
+      background: rgba(255,245,245,0.97);
+      color: #8d2020;
+      font-weight: 700;
+      line-height: 1.45;
+      text-align: center;
+      box-shadow: 0 12px 24px rgba(80,20,20,0.15);
+    }
+
+    .comsol-image-error[hidden] { display: none; }
+
+    .comsol-placeholder {
+      display: grid;
+      place-items: center;
+      min-height: 620px;
+      padding: 34px;
+      border: 1px dashed #aebfcc;
+      border-radius: 8px;
+      background:
+        linear-gradient(145deg, rgba(255,255,255,0.94), rgba(238,247,250,0.95));
+      color: #263746;
+      text-align: center;
+      animation: comsol-scale-in 0.28s ease both;
+    }
+
+    .comsol-placeholder-inner { max-width: 560px; }
+
+    .comsol-placeholder-icon {
+      width: 62px;
+      height: 62px;
+      margin: 0 auto 16px;
+      border: 1px solid #9fc8d8;
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, transparent 48%, rgba(0,168,204,0.28) 49%, rgba(0,168,204,0.28) 51%, transparent 52%),
+        linear-gradient(0deg, transparent 48%, rgba(55,183,144,0.28) 49%, rgba(55,183,144,0.28) 51%, transparent 52%),
+        #eef9fc;
+    }
+
+    .comsol-placeholder-status {
+      display: inline-flex;
+      margin: 0 0 10px;
+      padding: 5px 10px;
+      border: 1px solid #e8d29a;
+      border-radius: 999px;
+      background: #fff8e6;
+      color: #8a6417;
+      font-size: 0.76em;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .comsol-placeholder h3 {
+      margin: 0 0 8px;
+      color: #11364a;
+      font-size: 1.35em;
+      letter-spacing: 0;
+    }
+
+    .comsol-placeholder p:last-child {
+      margin: 0;
+      color: #607181;
+      line-height: 1.55;
+    }
+
+    @keyframes comsol-fade-slide {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes comsol-scale-in {
+      from { opacity: 0; transform: scale(0.985); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    @media (max-width: 1100px) {
+      .comsol-study-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .comsol-parametric-panel { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 767px) {
+      .comsol-navigation-panel {
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 50;
+        width: min(285px, calc(100vw - 24px));
+        height: 100vh;
+        height: 100dvh;
+        max-height: none;
+        border-radius: 0 12px 12px 0;
+        transform: translateX(-100%);
+      }
+
+      .comsol-navigation-trigger {
+        position: fixed;
+        top: auto;
+        right: auto;
+        bottom: 18px;
+        left: 18px;
+        z-index: 49;
+        width: 52px;
+        height: 52px;
+        border: 1px solid rgba(255,255,255,0.32);
+        border-radius: 50%;
+        opacity: 0.82;
+        transform: none;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.24);
+      }
+
+      .comsol-navigation-trigger span {
+        font-size: 0;
+        transform: none;
+      }
+
+      .comsol-navigation-trigger span::before {
+        content: "\2261";
+        font-size: 1.75rem;
+        font-weight: 500;
+        line-height: 1;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .tfg-tab-switcher { flex-direction: column; }
+      .tfg-comsol-header { padding: 20px; }
+      .comsol-study-grid,
+      .comsol-result-tabs,
+      .comsol-viewer-shell { grid-template-columns: 1fr; }
+      .comsol-viewer-stage { height: 620px; border-right: 0; border-bottom: 1px solid #c8d6e1; }
+      .comsol-viewer-tools {
+        top: 54px;
+        left: 12px;
+        width: auto;
+        max-width: none;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .comsol-viewer-tools .comsol-tool-button { width: 100%; }
+      .comsol-legend { min-height: 260px; }
+      .comsol-legend-scale { min-height: 190px; }
+      .comsol-panel-header,
+      .comsol-polarization-toolbar { align-items: flex-start; flex-direction: column; }
+      .comsol-status { white-space: normal; }
+      .comsol-parametric-controls { grid-template-columns: 1fr; }
+      .comsol-overpotential-filter-row,
+      .comsol-overpotential-field,
+      .comsol-overpotential-meta { width: 100%; }
+      .comsol-jpeg-legend-crop {
+        width: 116px;
+        height: 450px;
+        max-height: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav class="tfg-tab-switcher" aria-label="Navegacion de emuladores">
+    <button type="button" id="tab-sofc" class="tfg-tab active" aria-controls="seccion-sofc" aria-selected="true" onclick="mostrarSeccionTFG('sofc')">Emulador SOFC</button>
+    <button type="button" id="tab-comsol" class="tfg-tab" aria-controls="seccion-comsol" aria-selected="false" onclick="mostrarSeccionTFG('comsol')">Visor COMSOL</button>
+  </nav>
+
+  <section id="seccion-sofc">
+  <div class="dashboard">
+    <header class="tfg-sofc-header">
+      <h1>Emulador SOFC</h1>
+      <span class="comsol-student-credit">Carla Calder&oacute;n Fernand&eacute;z</span>
+      <div class="sofc-connection-panel">
+        <button id="btnConectar" onclick="conectarBluetooth()"> Conectar Bluetooth</button>
+        <button id="btnDesconectar" class="btn-rojo" onclick="desconectarBluetooth()" disabled> Desconectar</button>
+        <p>Estado: <span id="estado" style="color:#ce3141; font-weight:bold;">🔴 Desconectado</span> | Sesión: <span id="cronometro" style="color:#00d2ff; font-weight:bold;">00:00:00</span></p>
+      </div>
+    </header>
+
+    <div class="estado-container">
+        <div id="stepMidiendo" class="step-pill">1. LECTURA SENSOR (I)</div>
+        <div style="color: #444; font-size: 1.5em;">➔</div>
+        <div id="stepCalculando" class="step-pill">2. CÁLCULO IA / SET</div>
+        <div style="color: #444; font-size: 1.5em;">➔</div>
+        <div id="stepEstabilizando" class="step-pill">3. AJUSTE BUCK (PWM)</div>
+    </div>
+
+    <div class="grid-top">
+      <div class="caja-valor" id="cajaVout">Voltaje Real<span id="lblVout">0,000 V</span></div>
+      <div class="caja-valor">Corriente Real<span id="lblIout">0,000 A</span></div>
+      <div class="caja-valor">Potencia Real<span id="lblPotencia" style="color:#ffc107;">0,000 W</span></div>
+      <div class="caja-valor caja-ia" id="cajaObjetivo">Voltaje Objetivo<span id="lblVobj">0,000 V</span></div>
+      <div class="caja-valor">Señal PWM<span id="lblPWM" style="color:#ff9800;">0</span></div>
+    </div>
+
+    <div class="layout-main">
+      <div class="columna-izquierda">
+          <div class="card panel-parametros" id="panelParamsIA">
+            <h3 style="text-align:center; margin-top:0; color: #d288f0;">Parámetros Red Neuronal</h3>
+
+            <div class="sigma-box">
+              <h4>Conductividad Recomendada</h4>
+              <div class="sigma-value" id="lblSigmaRecomendada">σ_obj = Calculando...</div>
+              <div class="sigma-desc" id="lblSigmaRango">Rango: [--, --] S/m</div>
+            </div>
+
+            <div class="param-block">
+              <div class="param-title">Temperatura</div>
+              <div class="param-minmax"><span>690 °C</span><span>860 °C</span></div>
+              <div class="param-row">
+                <input type="range" id="sliderTemp" min="690" max="860" step="0.1" value="715">
+                <div class="input-unit-wrapper"><input type="number" id="inputTemp" min="690" max="860" step="0.1" value="715.0"><div class="unit-box">°C</div></div>
+              </div>
+            </div>
+
+            <div class="param-block">
+              <div class="param-title">Caudal de H₂</div>
+              <div class="param-minmax"><span>6,12e-11 <span class="minmax-unit">kg/s</span></span><span>8,16e-10 <span class="minmax-unit">kg/s</span></span></div>
+              <div class="param-row">
+                <input type="range" id="slidermH2" min="6.126288e-11" max="8.160303e-10" step="1e-12" value="2.5e-10">
+                <div class="input-unit-wrapper"><input type="number" id="inputmH2" min="6.126288e-11" max="8.160303e-10" step="1e-12" value="2.5e-10"><div class="unit-box">kg/s</div></div>
+              </div>
+            </div>
+
+            <div class="param-block">
+              <div class="param-title">Conductividad Ajustada</div>
+              <div class="param-minmax"><span><span id="sigmaMinLabel">0,00</span> <span class="minmax-unit">S/m</span></span><span><span id="sigmaMaxLabel">0,00</span> <span class="minmax-unit">S/m</span></span></div>
+              <div class="param-row">
+                <input type="range" id="sliderSigma" step="0.001">
+                <div class="input-unit-wrapper"><input type="number" id="inputSigmaObj" step="0.001"><div class="unit-box">S/m</div></div>
+              </div>
+            </div>
+
+            <button class="btn-info" onclick="enviarParametrosESP32()" id="btnEnviarParams" disabled style="width: 100%; margin: 10px 0 0 0; font-size: 1.1em; padding: 12px;"> Transmitir IA a ESP32</button>
+          </div>
+
+          <div class="card panel-exportar">
+              <h3 style="margin-top:0; margin-bottom: 12px; font-size: 1.1em; color: #fff;">Exportar Datos</h3>
+              <div class="botones-accion">
+                  <button class="btn-verde" onclick="descargarPNG('graficaHistorica', 'historico.png')"> Descargar Histórico (PNG)</button>
+                  <button class="btn-verde" onclick="descargarPNG('graficaCurvaIA', 'curva_polarizacion.png')"> Descargar Curva IA (PNG)</button>
+                  <button class="btn-verde" onclick="descargarPuntosCSV()"> Descargar Puntos Experimentales (CSV)</button>
+              </div>
+          </div>
+      </div>
+
+      <div class="columna-derecha">
+        <div class="panel-curvas">
+          <div class="card" style="margin-bottom:0;">
+            <h3 style="color: #d288f0; margin-top:0;">Curva Polarización IA</h3>
+            <div class="contenedor-grafico-ia"><canvas id="graficaCurvaIA"></canvas></div>
+            <button class="btn-registro" onclick="registrarPuntoCurva()">📍 REGISTRAR PUNTO EXPERIMENTAL</button>
+          </div>
+          <div class="card" style="margin-bottom:0;">
+            <h3 style="color: #d288f0; margin-top:0;">Curva Potencia IA</h3>
+            <div class="contenedor-grafico-ia"><canvas id="graficaPotenciaIA"></canvas></div>
+          </div>
+          <div class="card panel-resistencias" style="margin-bottom:0;">
+            <h3 style="color: #ff5722; margin-top:0; font-size: 1.1em;">Resistencia de carga dinámica (<span class="formula-inline">R = V/I</span>)</h3>
+            <div class="contenedor-grafico-resistencia"><canvas id="graficaResistencia"></canvas></div>
+          </div>
+        </div>
+
+        <div class="card panel-modo-mejorado" id="panelModoGlobal">
+          <h3 style="margin-top:0; color: #fff;">Modo de Operación</h3>
+          <div class="modos-wrapper">
+            <label class="radio-modo ia">
+              <input type="radio" name="modo_control" value="0" onchange="cambiarModoInterfaz()">
+              <span>Modo Red Neuronal</span>
+            </label>
+            <label class="radio-modo fijo">
+              <input type="radio" name="modo_control" value="1" checked onchange="cambiarModoInterfaz()">
+              <span>Modo Voltaje Fijo</span>
+            </label>
+          </div>
+          <div id="panelVoltajeFijo" class="box-fijo-animado">
+            <div class="param-title">Ajuste de Voltaje Objetivo</div>
+            <div class="param-minmax"><span>0,00 V</span><span>1,20 V</span></div>
+            <div class="param-row">
+              <input type="range" id="sliderVoltajeFijo" min="0.00" max="1.20" step="0.01" value="0.60">
+              <div class="input-unit-wrapper"><input type="number" id="inputVoltajeFijo" min="0.00" max="1.20" step="0.01" value="0.60"><div class="unit-box">V</div></div>
+              <button class="btn-verde" onclick="enviarParametrosESP32()" id="btnAplicarFijo" disabled style="height: 100%; margin:0; font-size: 1.1em;">Aplicar</button>
+            </div>
+          </div>
+
+          <div style="margin-top: 16px;">
+            <button class="btn-apagado" onclick="activarApagadoSeguroWeb()" id="btnApagadoSeguro" disabled>APAGADO SEGURO / CAMBIAR CARGA</button>
+            <button class="btn-start" onclick="reanudarSistemaWeb()" id="btnStartSeguro" disabled>START / REANUDAR CON RAMPA</button>
+          </div>
+        </div>
+      </div>
+    </div> 
+
+    <div class="panel-tiempo-real">
+      <div class="card"><h3>Voltaje y Corriente (40s)</h3><div class="contenedor-grafico"><canvas id="graficaDatos"></canvas></div></div>
+      <div class="card"><h3>Potencia (40s)</h3><div class="contenedor-grafico"><canvas id="graficaPotencia"></canvas></div></div>
+    </div>
+
+    <div class="card">
+      <h3 id="tituloHistorico">Histórico Acumulado</h3>
+      <div class="contenedor-historico"><canvas id="graficaHistorica"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h3>Monitor Serie BLUETOOTH <button class="btn-verde" onclick="descargarCSV()" style="font-size:0.8em; padding:6px 12px; float:right; margin-top:-5px;">📥 Exportar Histórico (Excel)</button></h3>
+      <div id="monitorSerie">Esperando datos...<br></div>
+    </div>
+  </div>
+  </section>
+
+  <section id="seccion-comsol" class="tfg-comsol-section" style="display:none;">
+    <div class="tfg-comsol-dashboard">
+      <header class="tfg-comsol-header">
+        <h1>Visor COMSOL</h1>
+        <span class="comsol-student-credit">Carla Calder&oacute;n Fernand&eacute;z</span>
+      </header>
+
+      <div class="comsol-study-grid" aria-label="Selector de estudios COMSOL">
+        <button type="button" id="comsol-study-700" class="comsol-study-card" onclick="comsolSeleccionarStudy('700')" aria-pressed="false">
+          <span class="comsol-study-label">Estudio </span>
+          <span class="comsol-study-temp">700 &deg;C</span>
+          <span class="comsol-study-status"></span>
+        </button>
+        <button type="button" id="comsol-study-750" class="comsol-study-card" onclick="comsolSeleccionarStudy('750')" aria-pressed="false">
+          <span class="comsol-study-label">Estudio</span>
+          <span class="comsol-study-temp">750 &deg;C</span>
+          <span class="comsol-study-status"></span>
+        </button>
+        <button type="button" id="comsol-study-800" class="comsol-study-card" onclick="comsolSeleccionarStudy('800')" aria-pressed="false">
+          <span class="comsol-study-label">Estudio</span>
+          <span class="comsol-study-temp">800 &deg;C</span>
+          <span class="comsol-study-status"></span>
+        </button>
+        <button type="button" id="comsol-study-850" class="comsol-study-card" onclick="comsolSeleccionarStudy('850')" aria-pressed="true">
+          <span class="comsol-study-label">Estudio</span>
+          <span class="comsol-study-temp">850 &deg;C</span>
+          <span class="comsol-study-status"></span>
+        </button>
+      </div>
+
+      <div class="comsol-dashboard-grid">
+        <button type="button" class="comsol-navigation-trigger" aria-controls="comsol-navigation-panel" aria-expanded="false">
+          <span>Visualizaciones &rsaquo;</span>
+        </button>
+
+        <aside id="comsol-navigation-panel" class="comsol-navigation-panel" aria-label="Resultados disponibles del estudio COMSOL" aria-hidden="true" inert>
+          <div class="comsol-navigation-header">
+            <span class="comsol-navigation-eyebrow">COMSOL Multiphysics</span>
+            <h2>Visualizaciones</h2>
+            <button type="button" class="comsol-navigation-close" aria-label="Cerrar visualizaciones">&times;</button>
+          </div>
+          <div class="comsol-result-tabs" aria-label="Resultados COMSOL">
+            <span class="comsol-result-tabs-title">Selecciona un resultado</span>
+            <button type="button" id="comsol-result-mesh" class="comsol-result-tab" onclick="comsolSeleccionarResultado('mesh')">Malla</button>
+            <button type="button" id="comsol-result-geometric" class="comsol-result-tab" onclick="comsolSeleccionarResultado('geometric')">Geometr&iacute;a</button>
+            <button type="button" id="comsol-result-velocity" class="comsol-result-tab" onclick="comsolSeleccionarResultado('velocity')">Velocidad</button>
+            <button type="button" id="comsol-result-n2_h2o" class="comsol-result-tab" onclick="comsolSeleccionarResultado('n2_h2o')">Fracci&oacute;n molar N2-H2O</button>
+            <button type="button" id="comsol-result-lineas_n2_h2o" class="comsol-result-tab" onclick="comsolSeleccionarResultado('lineas_n2_h2o')">L&iacute;neas de corriente N2-H2O</button>
+            <button type="button" id="comsol-result-h2_o2" class="comsol-result-tab" onclick="comsolSeleccionarResultado('h2_o2')">Fracci&oacute;n molar H2-O2</button>
+            <button type="button" id="comsol-result-lineas_h2_o2" class="comsol-result-tab" onclick="comsolSeleccionarResultado('lineas_h2_o2')">L&iacute;neas de corriente H2-O2</button>
+            <button type="button" id="comsol-result-polarization" class="comsol-result-tab" onclick="comsolSeleccionarResultado('polarization')">Curva de polarizaci&oacute;n</button>
+            <button type="button" id="comsol-result-density" class="comsol-result-tab" onclick="comsolSeleccionarResultado('density')">Curva de densidad</button>
+            <button type="button" id="comsol-result-overpotential" class="comsol-result-tab" onclick="comsolSeleccionarResultado('overpotential')">Curva de sobrepotencial</button>
+          </div>
+        </aside>
+
+        <main class="comsol-results-panel" aria-live="polite">
+          <div class="comsol-panel-header">
+            <h2 id="comsol-result-title">Fracci&oacute;n molar N2-H2O</h2>
+            <span id="comsol-viewer-status" class="comsol-status">Cargando modelo 3D</span>
+          </div>
+
+          <div id="comsol-result-body" class="comsol-result-body">
+            <div class="comsol-placeholder">
+              <div class="comsol-placeholder-inner">
+                <div class="comsol-placeholder-icon" aria-hidden="true"></div>
+                <p class="comsol-placeholder-status">Preparando interfaz</p>
+                <h3>Cargando Study T = 850 &deg;C</h3>
+                <p>El visor COMSOL se inicializa al cargar la p&aacute;gina.</p>
+              </div>
+            </div>
+          </div>
+
+        </main>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"; const RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; const TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+    const AREA_ACTIVA_M2 = 0.001; let device, rxCharacteristic, tiempoInicio = 0, intervaloCronometro = null;
+    let datosCSV = "Hora,Tiempo(s),V_real(V),I_real(A),V_obj(V),PWM,Potencia(W),Modo\n";
+    let puntosExperimentales = []; 
+    let apagadoSeguroWebActivo = false;
+    let ultimoModoAntesOFF = "1";
+
+    let cicloPasoVisual = 0;
+    let intervaloAnimacionPasos = null;
+    let bufferActualizacionPendiente = false;
+
+    function cambiarModoInterfaz() {
+      let modo = document.querySelector('input[name="modo_control"]:checked').value;
+      let panelFijo = document.getElementById("panelVoltajeFijo");
+      let cajaObj = document.getElementById("cajaObjetivo");
+      let panelParamsIA = document.getElementById("panelParamsIA");
+      let btnEnviarParams = document.getElementById("btnEnviarParams");
+
+      let nombreModo = modo === "0" ? "Red Neuronal (IA)" : "Voltaje Fijo";
+      escribirConsola(`<span style="color: #ffc107;"><b> Modo cambiado a: ${nombreModo}</b></span>`);
+
+      if (modo === "0") {
+        panelFijo.style.display = "none";
+        cajaObj.style.borderLeftColor = "#8e44ad"; 
+        cajaObj.querySelector("span").style.color = "#d288f0";
+        panelParamsIA.style.borderColor = "#8e44ad";
+        panelParamsIA.style.opacity = "1";
+        if (device && device.gatt.connected && !apagadoSeguroWebActivo) { btnEnviarParams.disabled = false; }
+      } else {
+        panelFijo.style.display = "block";
+        cajaObj.style.borderLeftColor = "#4CAF50"; 
+        cajaObj.querySelector("span").style.color = "#4CAF50";
+        panelParamsIA.style.borderColor = "#444";
+        panelParamsIA.style.opacity = "0.7"; 
+        btnEnviarParams.disabled = true; 
+      }
+      
+      panelParamsIA.style.pointerEvents = "auto"; 
+      enviarParametrosESP32(); 
+    }
+
+    function actualizarInterfazEstado(estado) {
+        document.getElementById('stepMidiendo').className = 'step-pill';
+        document.getElementById('stepCalculando').className = 'step-pill';
+        document.getElementById('stepEstabilizando').className = 'step-pill';
+
+        if (estado === 0) document.getElementById('stepMidiendo').classList.add('step-active');
+        if (estado === 1) document.getElementById('stepCalculando').classList.add('step-active');
+        if (estado === 2) document.getElementById('stepEstabilizando').classList.add('step-active');
+    }
+
+    function gestionarAnimacionPasos() {
+        if (intervaloAnimacionPasos) clearInterval(intervaloAnimacionPasos);
+
+        intervaloAnimacionPasos = setInterval(() => {
+            if (device && device.gatt.connected) {
+                let modo = document.querySelector('input[name="modo_control"]:checked').value;
+                if (modo === "0") {
+                    cicloPasoVisual = (cicloPasoVisual + 1) % 3;
+                    actualizarInterfazEstado(cicloPasoVisual);
+                } else {
+                    actualizarInterfazEstado(2);
+                }
+            } else {
+                actualizarInterfazEstado(-1);
+            }
+        }, 500);
+    }
+
+    function formatearDecimalVisual(valor) {
+      return String(valor).replace(/(\d)\.(\d)/g, "$1,$2");
+    }
+
+    function formatearFijoVisual(valor, decimales) {
+      return Number(valor).toFixed(decimales).replace(".", ",");
+    }
+
+    function formatearExponencialVisual(valor, decimales) {
+      return Number(valor).toExponential(decimales).replace(".", ",");
+    }
+
+    function leerNumeroVisual(valor) {
+      return parseFloat(String(valor).replace(",", "."));
+    }
+
+    function actualizarInputVisual(input) {
+      const wrapper = input.closest(".input-unit-wrapper");
+      if (wrapper) wrapper.dataset.display = formatearDecimalVisual(input.value);
+    }
+
+    function registrarPuntoCurva() {
+        let v = leerNumeroVisual(document.getElementById('lblVout').innerText);
+        let i = leerNumeroVisual(document.getElementById('lblIout').innerText);
+
+        if (i >= 0 && !isNaN(i) && !isNaN(v)) {
+            puntosExperimentales.push({ x: i, y: v });
+            graficaCurvaIA.update();
+            escribirConsola(`<span style="color: #00d2ff;"><b>📍 Punto Experimental Guardado: ${formatearFijoVisual(v, 3)}V @ ${formatearFijoVisual(i, 3)}A</b></span>`);
+        }
+    }
+
+    // EL TRUCO MAGNÍFICO DEL HOVER (INTERSECT: FALSE) PARA DEVOLVER EL TOOLTIP
+    const cfgComun = { 
+        responsive: true, 
+        maintainAspectRatio: false, 
+        animation: false,
+        interaction: { mode: 'index', intersect: false }, 
+        plugins: { tooltip: { enabled: true } }
+    };
+
+    const graficaCurvaIA = new Chart(document.getElementById('graficaCurvaIA').getContext('2d'), { 
+      type: 'line', 
+      data: { 
+        datasets: [
+          { label: 'Modelo Teórico (IA)', borderColor: '#d288f0', backgroundColor: 'rgba(210, 136, 240, 0.1)', fill: true, data: [], tension: 0.2, pointRadius: 0, order: 3 },
+          { label: 'Punto Actual (Vivo)', backgroundColor: '#ffeb3b', data: [], pointRadius: 8, type: 'scatter', order: 1 },
+          { label: 'Experimentales', backgroundColor: '#00d2ff', borderColor: '#00d2ff', data: puntosExperimentales, pointRadius: 6, showLine: false, type: 'scatter', order: 2 }
+        ]
+      }, 
+      options: { ...cfgComun, scales: { x: { type: 'linear', title: { display: true, text: 'Corriente (A)' } }, y: { title: { display: true, text: 'Voltaje (V)' }, min: 0.6 } } } 
+    });
+
+    const graficaPotenciaIA = new Chart(document.getElementById('graficaPotenciaIA').getContext('2d'), { 
+      type: 'line', 
+      data: { 
+        datasets: [
+          { label: 'Potencia (W)', borderColor: '#ffc107', backgroundColor: 'rgba(255, 193, 7, 0.1)', fill: true, data: [], tension: 0.2, order: 2, pointRadius: 0 },
+          { label: 'Máx. Potencia (MPPT)', backgroundColor: '#ff5252', data: [], pointRadius: 8, type: 'scatter', order: 1 }
+        ]
+      }, 
+      options: { ...cfgComun, scales: { x: { type: 'linear', title: { display: true, text: 'Corriente (A)' } }, y: { title: { display: true, text: 'Potencia (W)' } } } } 
+    });
+
+    const graficaDatos = new Chart(document.getElementById('graficaDatos').getContext('2d'), { type: 'line', data: { labels: [], datasets: [{ label: 'Voltaje Real (V)', borderColor: '#4CAF50', data: [], yAxisID: 'y', tension: 0.2, pointRadius: 0 }, { label: 'Corriente Real (A)', borderColor: '#00d2ff', data: [], yAxisID: 'y1', tension: 0.2, pointRadius: 0 }, { label: 'Voltaje Obj (V)', borderColor: '#ffffff', data: [], yAxisID: 'y', tension: 0.2, borderDash: [5, 5], pointRadius: 0 }]}, options: { ...cfgComun, scales: { x: { title: { display: true, text: 'Segundos' } }, y: { position: 'left' }, y1: { position: 'right', grid: { drawOnChartArea: false } } } } });
+
+    const graficaPotencia = new Chart(document.getElementById('graficaPotencia').getContext('2d'), { type: 'line', data: { labels: [], datasets: [{ label: 'Potencia Real (W)', borderColor: '#ffc107', fill: true, backgroundColor: 'rgba(255,193,7,0.15)', data: [], tension: 0.2, pointRadius: 0 }]}, options: { ...cfgComun, scales: { x: { title: { display: true, text: 'Segundos' } }, y: { beginAtZero: true } } } });
+
+    const graficaResistencia = new Chart(document.getElementById('graficaResistencia').getContext('2d'), {
+        type: 'line',
+        data: { labels: [], datasets: [{ label: 'Resistencia (Ω)', borderColor: '#ff5722', backgroundColor: 'rgba(255,87,34,0.2)', fill: true, data: [], tension: 0.2, pointRadius: 0 }] },
+        options: { 
+            ...cfgComun, 
+            scales: { 
+                x: { title: { display: true, text: 'Segundos' } }, 
+                y: { type: 'linear', title: { display: true, text: 'Ohmios (Ω)' }, beginAtZero: false } 
+            } 
+        }
+    });
+
+    const graficaHistorica = new Chart(document.getElementById('graficaHistorica').getContext('2d'), { 
+      type: 'line', 
+      data: { labels: [], datasets: [
+          { label: 'Voltaje Real (V)', borderColor: '#4CAF50', data: [], yAxisID: 'y', tension: 0.2, pointRadius: 0, borderWidth: 2, pointHitRadius: 10 }, 
+          { label: 'Corriente Real (A)', borderColor: '#00d2ff', data: [], yAxisID: 'y1', tension: 0.2, pointRadius: 0, borderWidth: 2, pointHitRadius: 10 },
+          { label: 'Voltaje Objetivo', borderColor: 'rgba(255,255,255,0.8)', backgroundColor: '#ffffff', borderDash: [5, 5], data: [], yAxisID: 'y', pointRadius: 0, borderWidth: 2, pointHitRadius: 10 } 
+      ]}, 
+      options: { 
+        ...cfgComun, 
+        plugins: {
+            tooltip: { enabled: true },
+            zoom: {
+                // EL ZOOM Y PANEO AHORA ESTÁN SIEMPRE ACTIVOS
+                zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+                pan: { enabled: true, mode: 'x' }
+            }
+        },
+        scales: { 
+          x: { title: { display: true, text: 'Tiempo Transcurrido (s)' } }, 
+          y: { position: 'left', beginAtZero: true, title: { display: true, text: 'Voltaje (V)' } }, 
+          y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: 'Corriente (A)' } } 
+        } 
+      } 
+    });
+
+    function sigmaModelAvailable() { 
+      return window.SIGMA_MODEL_LOG_SPLINE_NUEVO && typeof window.calcularRangoSigmaLogSplineNuevo === "function"; 
+    }
+
+    function calcularConductividad() {
+      let T = parseFloat(document.getElementById("inputTemp").value);
+      if (!sigmaModelAvailable()) {
+        escribirConsola(`<span style="color:#ff5252;"><b>⚠ No se ha cargado sigma_model_log_spline_nuevo.js</b></span>`);
+        return;
+      }
+      const rango = window.calcularRangoSigmaLogSplineNuevo(T);
+      const sigmaObj = rango.sigma_obj;
+      const sigmaMin = rango.sigma_min;
+      const sigmaMax = rango.sigma_max;
+
+      document.getElementById("lblSigmaRecomendada").innerText = `σ_obj = ${formatearExponencialVisual(sigmaObj, 4)} S/m`;
+      document.getElementById("lblSigmaRango").innerText = `Rango: [${formatearExponencialVisual(sigmaMin, 4)}, ${formatearExponencialVisual(sigmaMax, 4)}] S/m`;
+
+      const slider = document.getElementById("sliderSigma");
+      slider.min = sigmaMin; slider.max = sigmaMax; slider.step = (sigmaMax - sigmaMin) / 100; slider.value = sigmaObj;
+
+      document.getElementById("inputSigmaObj").value = sigmaObj.toFixed(3);
+      actualizarInputVisual(document.getElementById("inputSigmaObj"));
+      document.getElementById("sigmaMinLabel").innerText = formatearFijoVisual(sigmaMin, 3);
+      document.getElementById("sigmaMaxLabel").innerText = formatearFijoVisual(sigmaMax, 3);
+
+      generarCurvaIA();
+    }
+
+    function activarNN(x, activation) {
+      const act = String(activation || "").toLowerCase();
+      if (act === "elu") return x > 0 ? x : Math.exp(x) - 1.0;
+      if (act === "gelu") return 0.5 * x * (1.0 + Math.tanh(Math.sqrt(2.0 / Math.PI) * (x + 0.044715 * Math.pow(x, 3))));
+      if (act === "tanh") return Math.tanh(x);
+      if (act === "relu") return Math.max(0.0, x);
+      return x;
+    }
+
+    function denseForward(inputVector, layer) {
+      const W = layer.W; const b = layer.b; const out = [];
+      for (let i = 0; i < b.length; i++) { let suma = b[i]; for (let j = 0; j < inputVector.length; j++) { suma += W[i][j] * inputVector[j]; } out.push(suma); }
+      return out;
+    }
+
+    function nnPredictVoltage(T, mH2, sigma, J) {
+      if (!window.H2_INVERSE_MODEL) { return 0.8; }
+      const M = window.H2_INVERSE_MODEL;
+      const xRaw = [ T, Math.log10(mH2 + 1e-30), Math.log10(sigma + 1e-30), J ];
+      let a = xRaw.map((v, i) => (v - M.mean_x[i]) / M.std_x[i]);
+      for (let layerIndex = 0; layerIndex < M.layers.length; layerIndex++) {
+        let z = denseForward(a, M.layers[layerIndex]);
+        a = (layerIndex < M.layers.length - 1) ? z.map(v => activarNN(v, M.activation)) : z;
+      }
+      return a[0] * M.std_y[0] + M.mean_y[0];
+    }
+
+    function generarCurvaIA() {
+      let T = parseFloat(document.getElementById('inputTemp').value);
+      let mH2 = parseFloat(document.getElementById('inputmH2').value);
+      let sigma = parseFloat(document.getElementById('inputSigmaObj').value);
+
+      let curvaVI = []; let curvaPI = [];
+      let maxP = 0; let maxI = 0; 
+
+      for(let i = 0; i <= 30; i += 0.2) {
+        let V = nnPredictVoltage(T, mH2, sigma, i / AREA_ACTIVA_M2);
+        if (V < 0.70) break;
+        
+        let P = V * i;
+        if (P > maxP) { maxP = P; maxI = i; } 
+
+        curvaVI.push({ x: i, y: V });
+        curvaPI.push({ x: i, y: P });
+      }
+
+      graficaCurvaIA.data.datasets[0].data = curvaVI;
+      graficaPotenciaIA.data.datasets[0].data = curvaPI;
+      graficaPotenciaIA.data.datasets[1].data = [{ x: maxI, y: maxP }];
+
+      graficaCurvaIA.update();
+      graficaPotenciaIA.update();
+    }
+
+    async function enviarParametrosESP32() {
+      if (!rxCharacteristic) return;
+
+      if (apagadoSeguroWebActivo) {
+        escribirConsola(`<span style="color:#ff5252;"><b>Sistema en APAGADO SEGURO. Pulsa START para reanudar.</b></span>`);
+        return;
+      }
+
+      let modo = document.querySelector('input[name="modo_control"]:checked').value;
+      let cmd = "";
+
+      if (modo === "0") {
+          cmd = `IA,${document.getElementById('inputTemp').value},${document.getElementById('inputmH2').value},${document.getElementById('inputSigmaObj').value}\n`;
+          escribirConsola(`<span style="color: #d288f0;"><b>📡 Transmitiendo a IA -> T: ${formatearDecimalVisual(document.getElementById('inputTemp').value)}°C | H2: ${formatearDecimalVisual(document.getElementById('inputmH2').value)} kg/s | σ: ${formatearDecimalVisual(document.getElementById('inputSigmaObj').value)} S/m</b></span>`);
+      } else {
+          cmd = `FIX,${document.getElementById('inputVoltajeFijo').value}\n`;
+          escribirConsola(`<span style="color: #4CAF50;"><b>📡 Transmitiendo -> Voltaje Fijo: ${formatearDecimalVisual(document.getElementById('inputVoltajeFijo').value)} V</b></span>`);
+      }
+
+      await rxCharacteristic.writeValue(new TextEncoder().encode(cmd));
+    }
+
+    async function enviarComandoSeguroESP32(cmd) {
+      if (!rxCharacteristic) { escribirConsola(`<span style="color:#ff5252;"><b>⚠ No hay conexión BLE activa.</b></span>`); return false; }
+      try { await rxCharacteristic.writeValue(new TextEncoder().encode(cmd + "\n")); return true; } 
+      catch (error) { escribirConsola(`<span style="color:#ff5252;"><b>⚠ Error enviando comando: ${cmd}</b></span>`); return false; }
+    }
+
+    async function activarApagadoSeguroWeb() {
+      ultimoModoAntesOFF = document.querySelector('input[name="modo_control"]:checked').value;
+      apagadoSeguroWebActivo = true;
+
+      document.getElementById("panelModoGlobal").classList.add("modo-seguro-activo");
+      document.getElementById("cajaObjetivo").classList.add("modo-seguro-activo");
+      document.getElementById("lblVobj").innerText = "OFF"; document.getElementById("lblPWM").innerText = "0";
+
+      document.getElementById("btnApagadoSeguro").disabled = true; document.getElementById("btnStartSeguro").disabled = false;
+      document.getElementById("btnEnviarParams").disabled = true; document.getElementById("btnAplicarFijo").disabled = true;
+
+      graficaCurvaIA.data.datasets[1].data = [];
+      graficaCurvaIA.update('none');
+
+      actualizarInterfazEstado(2);
+      const enviado = await enviarComandoSeguroESP32("SAFE_OFF");
+      if (enviado) escribirConsola(`<span style="color:#ff5252;"><b> APAGADO SEGURO ACTIVADO: el ESP32 debe bajar el PWM gradualmente hasta 0.</b></span>`);
+    }
+
+    async function reanudarSistemaWeb() {
+      if (!apagadoSeguroWebActivo) return;
+      const enviado = await enviarComandoSeguroESP32("SAFE_START");
+      if (!enviado) return;
+      
+      apagadoSeguroWebActivo = false;
+      document.getElementById("panelModoGlobal").classList.remove("modo-seguro-activo");
+      document.getElementById("cajaObjetivo").classList.remove("modo-seguro-activo");
+
+      document.getElementById("btnApagadoSeguro").disabled = false; document.getElementById("btnStartSeguro").disabled = true;
+      document.getElementById("btnEnviarParams").disabled = false; document.getElementById("btnAplicarFijo").disabled = false;
+
+      const radioAnterior = document.querySelector(`input[name="modo_control"][value="${ultimoModoAntesOFF}"]`);
+      if (radioAnterior) radioAnterior.checked = true;
+
+      cambiarModoInterfaz(); generarCurvaIA();
+      setTimeout(() => { enviarParametrosESP32(); }, 250);
+      escribirConsola(`<span style="color:#28a745;"><b>▶ START enviado: se reanuda el modo anterior con rampa desde el microcontrolador.</b></span>`);
+    }
+
+    async function conectarBluetooth() {
+      try {
+        device = await navigator.bluetooth.requestDevice({ filters: [{ name: 'ESP32_BUCK' }], optionalServices: [SERVICE_UUID] });
+        device.addEventListener('gattserverdisconnected', onDesconexion);
+        const server = await device.gatt.connect();
+        const txCharacteristic = await (await server.getPrimaryService(SERVICE_UUID)).getCharacteristic(TX_UUID);
+        await txCharacteristic.startNotifications(); 
+        
+        let textoAcumulado = "";
+        txCharacteristic.addEventListener('characteristicvaluechanged', (event) => {
+            textoAcumulado += new TextDecoder().decode(event.target.value);
+            let paquetes = textoAcumulado.split('\n');
+            textoAcumulado = paquetes.pop();
+            paquetes.forEach(paquete => { if (paquete.trim().length > 0) procesarMultiplesDatos(paquete); });
+        });
+
+        rxCharacteristic = await (await server.getPrimaryService(SERVICE_UUID)).getCharacteristic(RX_UUID);
+
+        document.getElementById('estado').innerText = '🟢 Conectado'; document.getElementById('estado').style.color = '#28a745';
+        document.getElementById('btnConectar').disabled = true; document.getElementById('btnDesconectar').disabled = false; 
+        document.getElementById('btnEnviarParams').disabled = false; document.getElementById('btnAplicarFijo').disabled = false;
+        document.getElementById('btnApagadoSeguro').disabled = false; document.getElementById('btnStartSeguro').disabled = true;
+
+        iniciarCronometro(); gestionarAnimacionPasos();
+        escribirConsola("Sistema Conectado al Emulador.");
+      } catch (error) { alert("Error de conexión BLE."); }
+    }
+
+    function procesarMultiplesDatos(tramaCompleta) {
+        let gruposDatos = tramaCompleta.split(';');
+        let voutFinal = 0, ioutFinal = 0, pwmFinal = 0, potenciaFinal = 0, vobjFinal = 0;
+        let huboDatosValidos = false;
+        let ts = new Date().toLocaleTimeString();
+        let modoActual = document.querySelector('input[name="modo_control"]:checked').value;
+
+        gruposDatos.forEach(datoStr => {
+            let partes = datoStr.trim().split(',');
+            if (partes.length >= 3) {
+                let vout = parseFloat(partes[0]), iout = parseFloat(partes[1]), pwm = parseInt(partes[2]);
+                let potencia = vout * iout;
+                let vobj = 0.0;
+
+                if (!apagadoSeguroWebActivo) {
+                    vobj = (modoActual === "0") ? nnPredictVoltage(parseFloat(document.getElementById('inputTemp').value), parseFloat(document.getElementById('inputmH2').value), parseFloat(document.getElementById('inputSigmaObj').value), iout / AREA_ACTIVA_M2) : parseFloat(document.getElementById('inputVoltajeFijo').value);
+                }
+
+                let t_seg_puro = ((Date.now() - tiempoInicio) / 1000).toFixed(2);
+                datosCSV += `${ts},${t_seg_puro},${vout},${iout},${vobj},${pwm},${potencia},${modoActual}\n`;
+                let seg = t_seg_puro;
+
+                if (iout >= 0.01) {
+                    graficaResistencia.data.labels.push(seg); graficaResistencia.data.datasets[0].data.push(vout / iout);
+                    if (graficaResistencia.data.labels.length > 40) { graficaResistencia.data.labels.shift(); graficaResistencia.data.datasets[0].data.shift(); }
+                }
+
+                graficaDatos.data.labels.push(seg); graficaDatos.data.datasets[0].data.push(vout); graficaDatos.data.datasets[1].data.push(iout); graficaDatos.data.datasets[2].data.push(vobj);
+                graficaPotencia.data.labels.push(seg); graficaPotencia.data.datasets[0].data.push(potencia);
+
+                if (graficaDatos.data.labels.length > 40) { 
+                    graficaDatos.data.labels.shift(); graficaDatos.data.datasets.forEach(d => d.data.shift()); 
+                    graficaPotencia.data.labels.shift(); graficaPotencia.data.datasets[0].data.shift(); 
+                }
+
+                graficaHistorica.data.labels.push(seg); 
+                graficaHistorica.data.datasets[0].data.push(vout); 
+                graficaHistorica.data.datasets[1].data.push(iout);
+                graficaHistorica.data.datasets[2].data.push(vobj); 
+
+                voutFinal = vout; ioutFinal = iout; pwmFinal = pwm; potenciaFinal = potencia; vobjFinal = vobj;
+                huboDatosValidos = true;
+            }
+        });
+
+        if (huboDatosValidos) {
+            if (voutFinal < 0.60) document.getElementById('cajaVout').classList.add('alarma-activa'); else document.getElementById('cajaVout').classList.remove('alarma-activa');
+            document.getElementById('lblVout').innerText = formatearFijoVisual(voutFinal, 3) + " V"; 
+            document.getElementById('lblIout').innerText = formatearFijoVisual(ioutFinal, 3) + " A";
+            document.getElementById('lblPotencia').innerText = formatearFijoVisual(potenciaFinal, 2) + " W"; 
+            document.getElementById('lblVobj').innerText = apagadoSeguroWebActivo ? "OFF" : formatearFijoVisual(vobjFinal, 3) + " V";
+            document.getElementById('lblPWM').innerText = apagadoSeguroWebActivo ? "0" : pwmFinal;
+
+            escribirConsola(`[${ts}] -> Vout: ${formatearFijoVisual(voutFinal, 3)}V | Iout: ${formatearFijoVisual(ioutFinal, 3)}A | PWM: ${pwmFinal}`);
+
+            if (!apagadoSeguroWebActivo) {
+                graficaCurvaIA.data.datasets[1].data = [{ x: ioutFinal, y: voutFinal }];
+                graficaCurvaIA.update('none');
+            } else {
+                graficaCurvaIA.data.datasets[1].data = [];
+                graficaCurvaIA.update('none');
+            } 
+
+            if (!bufferActualizacionPendiente) {
+                bufferActualizacionPendiente = true;
+                requestAnimationFrame(() => {
+                    graficaDatos.update('none'); 
+                    graficaPotencia.update('none'); 
+                    graficaResistencia.update('none');
+                    
+                    if (graficaHistorica.data.labels.length > 3000) {
+                        graficaHistorica.data.labels.splice(0, 100);
+                        graficaHistorica.data.datasets[0].data.splice(0, 100);
+                        graficaHistorica.data.datasets[1].data.splice(0, 100);
+                        graficaHistorica.data.datasets[2].data.splice(0, 100);
+                    }
+                    graficaHistorica.update('none');
+                    bufferActualizacionPendiente = false;
+                });
+            }
+        }
+    }
+
+    function onDesconexion() {
+      document.getElementById('estado').innerText = '🔴 Desconectado'; document.getElementById('estado').style.color = '#dc3545';
+      document.getElementById('btnConectar').disabled = false; document.getElementById('btnDesconectar').disabled = true;
+      document.getElementById('btnApagadoSeguro').disabled = true; document.getElementById('btnStartSeguro').disabled = true;
+      detenerCronometro(); actualizarInterfazEstado(-1);
+      if(intervaloAnimacionPasos) clearInterval(intervaloAnimacionPasos);
+      escribirConsola("❌ Conexión terminada.");
+    }
+
+    function escribirConsola(txt) { 
+        let c = document.getElementById('monitorSerie'); 
+        c.innerHTML += txt + "<br>"; 
+        let lineas = c.innerHTML.split('<br>');
+        if (lineas.length > 200) c.innerHTML = lineas.slice(lineas.length - 200).join('<br>');
+        c.scrollTop = c.scrollHeight; 
+    }
+
+    function desconectarBluetooth() { if (device && device.gatt.connected) device.gatt.disconnect(); }
+    function iniciarCronometro() { tiempoInicio = Date.now(); intervaloCronometro = setInterval(() => { let d = Math.floor((Date.now() - tiempoInicio) / 1000); document.getElementById('cronometro').innerText = `${String(Math.floor(d/3600)).padStart(2,'0')}:${String(Math.floor((d%3600)/60)).padStart(2,'0')}:${String(d%60).padStart(2,'0')}`; }, 1000); }
+    function detenerCronometro() { clearInterval(intervaloCronometro); }
+    function descargarCSV() { let e = document.createElement('a'); e.href = window.URL.createObjectURL(new Blob([datosCSV], { type: 'text/csv' })); e.download = 'datos_emulador_historico.csv'; e.click(); }
+    function descargarPNG(chartId, filename) { let canvas = document.getElementById(chartId); let link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = filename; link.click(); }
+    function descargarPuntosCSV() {
+        if (puntosExperimentales.length === 0) { alert("No hay puntos experimentales registrados para descargar."); return; }
+        let csvContent = "Corriente(A),Voltaje(V)\n";
+        puntosExperimentales.forEach(punto => { csvContent += `${punto.x},${punto.y}\n`; });
+        let e = document.createElement('a'); e.href = window.URL.createObjectURL(new Blob([csvContent], { type: 'text/csv' })); e.download = 'puntos_experimentales.csv'; e.click();
+    }  
+
+    const RETRASO = 1000; 
+    function configurarInput(inputId, sliderId, min, max, callbackExtra) {
+        const input = document.getElementById(inputId); const slider = document.getElementById(sliderId); let timer;
+        const formatearValor = (valor) => {
+            const numero = parseFloat(valor);
+            if (inputId === "inputmH2") return numero.toExponential(3);
+            if (inputId === "inputSigmaObj") return numero.toFixed(3);
+            return valor;
+        };
+        input.value = formatearValor(input.value);
+        actualizarInputVisual(input);
+        slider.addEventListener("input", (e) => { input.value = formatearValor(e.target.value); actualizarInputVisual(input); input.classList.remove("input-error"); if(callbackExtra) callbackExtra(); });
+        input.addEventListener("keydown", () => { clearTimeout(timer); input.classList.remove("input-error"); });
+        input.addEventListener("keyup", () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                let val = parseFloat(input.value); let valMin = min === "dynamic" ? parseFloat(slider.min) : min; let valMax = max === "dynamic" ? parseFloat(slider.max) : max;
+                if (isNaN(val) || val < valMin || val > valMax) input.classList.add("input-error"); 
+                else { input.classList.remove("input-error"); slider.value = val; input.value = formatearValor(val); actualizarInputVisual(input); if(callbackExtra) callbackExtra(); }
+            }, RETRASO);
+        });
+        input.addEventListener("blur", () => actualizarInputVisual(input));
+    }
+
+    configurarInput("inputTemp", "sliderTemp", 690, 860, calcularConductividad);
+    configurarInput("inputmH2", "slidermH2", 6.126288e-11, 8.160303e-10, generarCurvaIA);
+    configurarInput("inputSigmaObj", "sliderSigma", "dynamic", "dynamic", generarCurvaIA);
+    configurarInput("inputVoltajeFijo", "sliderVoltajeFijo", 0.00, 1.20);
+
+    window.addEventListener('DOMContentLoaded', (event) => { 
+      cambiarModoInterfaz(); 
+      gestionarAnimacionPasos(); 
+      calcularConductividad();
+    });
+  </script>
+
+  <script>
+    /* =========================================================
+    COMSOL DASHBOARD - SOLO SECCIÓN COMSOL
+    ========================================================= */
+
+    const COMSOL_STUDIES = {
+      "850": {
+        label: "Study T = 850 &deg;C",
+        altLabel: "Study T = 850 C",
+        temperature: "850 &deg;C",
+        conductivity: "1200 S/m",
+        vcell: "0,7 V",
+        flow: "m&#775;H<sub>2</sub> variable (kg/s)",
+        currentDensity: "1,42 A/cm&sup2; aprox.",
+        assets: {
+          species: "./assets/comsol/Estudio850/species_h2_viewStudy850.glb",
+          mesh: "./assets/comsol/Estudio850/Mesh850.glb",
+          velocity: "./assets/comsol/Estudio850/Velocity850.glb",
+          polarization: {
+            complete: "./assets/comsol/Estudio850/CurvaPolarització/CurvaPolarizacionStudy850_Completa.jpeg",
+            mh2_5_58: "./assets/comsol/Estudio850/CurvaPolarització/CurvaPolarizacionStudy850_mH2_5.58.jpeg",
+            mh2_6_88: "./assets/comsol/Estudio850/CurvaPolarització/CurvaPolarizacionStudy850_mH2_6.88.jpeg",
+            mh2_1_38: "./assets/comsol/Estudio850/CurvaPolarització/CurvaPolarizacionStudy850_mH2_1.38.jpeg",
+            mh2_2_70: "./assets/comsol/Estudio850/CurvaPolarització/CurvaPolarizacionStudy850_mH2_2.70.jpeg"
+          },
+          density: {
+            complete: "./assets/comsol/Estudio850/CurvaPotencial/CurvaPotencial850_Completa.jpeg",
+            mh2_5_58: "./assets/comsol/Estudio850/CurvaPotencial/CurvaPotencial850_mH2_5.58.jpeg",
+            mh2_6_88: "./assets/comsol/Estudio850/CurvaPotencial/CurvaPotencial850_mH2_6.88.jpeg",
+            mh2_1_38: "./assets/comsol/Estudio850/CurvaPotencial/CurvaPotencial850_mH2_1.38.jpeg",
+            mh2_2_70: "./assets/comsol/Estudio850/CurvaPotencial/CurvaPotencial850_mH2_2.70.jpeg"
+          }
+        }
+      },
+      "800": {
+        label: "Study T = 800 &deg;C",
+        altLabel: "Study T = 800 C",
+        temperature: "800 &deg;C",
+        conductivity: "10 S/m",
+        vcell: "0,7 V",
+        flow: "m&#775;H<sub>2</sub> variable (kg/s)",
+        currentDensity: "Pendiente",
+        assets: {
+          species: "./assets/comsol/Estudio800/species_h2_viewStudy800.glb",
+          mesh: "./assets/comsol/Estudio800/Mesh800.glb",
+          velocity: "./assets/comsol/Estudio800/Velocity800.glb",
+          polarization: {
+            complete: "./assets/comsol/Estudio800/CurvaPolaritzacio/CurvaPolarizacionStudy800_Completa.jpeg",
+            mh2_5_58: "./assets/comsol/Estudio800/CurvaPolaritzacio/CurvaPolarizacionStudy800_mH2_5.58.jpeg",
+            mh2_6_88: "./assets/comsol/Estudio800/CurvaPolaritzacio/CurvaPolarizacionStudy800_mH2_6.88.jpeg",
+            mh2_1_38: "./assets/comsol/Estudio800/CurvaPolaritzacio/CurvaPolarizacionStudy800_mH2_1.38.jpeg",
+            mh2_2_70: "./assets/comsol/Estudio800/CurvaPolaritzacio/CurvaPolarizacionStudy800_mH2_2.70.jpeg"
+          },
+          density: {
+            complete: "./assets/comsol/Estudio800/CurvaPotencial/CurvaPotencial800_Completa.jpeg",
+            mh2_5_58: "./assets/comsol/Estudio800/CurvaPotencial/CurvaPotencial8000_mH2_5.58.jpeg",
+            mh2_6_88: "./assets/comsol/Estudio800/CurvaPotencial/CurvaPotencial800_mH2_6.88.jpeg",
+            mh2_1_38: "./assets/comsol/Estudio800/CurvaPotencial/CurvaPotencial800_mH2_1.38.jpeg",
+            mh2_2_70: "./assets/comsol/Estudio800/CurvaPotencial/CurvaPotencial800_mH2_2.70.jpeg"
+          }
+        }
+      },
+      "750": {
+        label: "Study T = 750 &deg;C",
+        altLabel: "Study T = 750 C",
+        temperature: "750 &deg;C",
+        conductivity: "1 S/m",
+        vcell: "0,7 V",
+        flow: "m&#775;H<sub>2</sub> variable (5 caudales)",
+        currentDensity: "Pendiente",
+        assets: {
+          species: null,
+          mesh: null,
+          velocity: null,
+          polarization: {
+            complete: "./assets/comsol/Estudio750/CurvaPolaritzacio/CurvaPolarizacionStudy750_Completa.jpeg",
+            mh2_5_58: "./assets/comsol/Estudio750/CurvaPolaritzacio/CurvaPolarizacionStudy750_mH2_5.58.jpeg",
+            mh2_6_88: "./assets/comsol/Estudio750/CurvaPolaritzacio/CurvaPolarizacionStudy750_mH2_6.88.jpeg",
+            mh2_1_38: "./assets/comsol/Estudio750/CurvaPolaritzacio/CurvaPolarizacionStudy750_mH2_1.38.jpeg",
+            mh2_2_70: "./assets/comsol/Estudio750/CurvaPolaritzacio/CurvaPolarizacionStudy750_mH2_2.70.jpeg",
+            mh2_8_20: "./assets/comsol/Estudio750/CurvaPolaritzacio/CurvaPolarizacionStudy750_mH2_8.20.jpeg"
+          },
+          density: {
+            complete: "./assets/comsol/Estudio750/CurvaPotencial/CurvaPotencial750_Completa.jpeg",
+            mh2_5_58: "./assets/comsol/Estudio750/CurvaPotencial/CurvaPotencial750_mH2_5.58.jpeg",
+            mh2_6_88: "./assets/comsol/Estudio750/CurvaPotencial/CurvaPotencial750_mH2_6.88.jpeg",
+            mh2_1_38: "./assets/comsol/Estudio750/CurvaPotencial/CurvaPotencial750_mH2_1.38.jpeg",
+            mh2_2_70: "./assets/comsol/Estudio750/CurvaPotencial/CurvaPotencial750_mH2_2.70.jpeg"
+          }
+        }
+      },
+      "700": {
+        label: "Study T = 700 &deg;C",
+        altLabel: "Study T = 700 C",
+        temperature: "700 &deg;C",
+        conductivity: "0,3 S/m",
+        vcell: "0,7 V",
+        flow: "m&#775;H<sub>2</sub> variable (5 caudales)",
+        currentDensity: "Pendiente",
+        assets: {
+          species: null,
+          mesh: null,
+          velocity: null,
+          polarization: {
+            complete: "./assets/comsol/Estudio700/CurvaPolaritzacio/CurvaPolarizacionStudy700_Completa.jpeg",
+            mh2_5_58: "./assets/comsol/Estudio700/CurvaPolaritzacio/CurvaPolarizacionStudy700_mH2_5.58.jpeg",
+            mh2_6_88: "./assets/comsol/Estudio700/CurvaPolaritzacio/CurvaPolarizacionStudy700_mH2_6.88.jpeg",
+            mh2_1_38: "./assets/comsol/Estudio700/CurvaPolaritzacio/CurvaPolarizacionStudy700_mH2_1.38.jpeg",
+            mh2_2_70: "./assets/comsol/Estudio700/CurvaPolaritzacio/CurvaPolarizacionStudy700_mH2_2.70.jpeg",
+            mh2_8_20: "./assets/comsol/Estudio700/CurvaPolaritzacio/CurvaPolarizacionStudy700_mH2_8.20.jpeg"
+          },
+          density: {
+            complete: "./assets/comsol/Estudio700/CurvaPotencial/CurvaPotencial700_Completa.jpeg",
+            mh2_5_58: "./assets/comsol/Estudio700/CurvaPotencial/CurvaPotencial700_mH2_5.58.jpeg",
+            mh2_6_88: "./assets/comsol/Estudio700/CurvaPotencial/CurvaPotencial700_mH2_6.88.jpeg",
+            mh2_1_38: "./assets/comsol/Estudio700/CurvaPotencial/CurvaPotencial700_mH2_1.38.jpeg",
+            mh2_2_70: "./assets/comsol/Estudio700/CurvaPotencial/CurvaPotencial700_mH2_2.70.jpeg"
+          }
+        }
+      }
+    };
+
+    const COMSOL_RESULTS = {
+      species: {
+        label: "Species H<sub>2</sub>",
+        assetKey: "species",
+        badge: "Species H2",
+        placeholderName: "el visor Species H<sub>2</sub>",
+        loadedText: "Modelo Species H2 cargado"
+      },
+      mesh: {
+        label: "Malla",
+        assetKey: "mesh",
+        badge: "Mesh",
+        placeholderName: "la malla",
+        loadedText: "Malla 3D cargada"
+      },
+      geometric: {
+        label: "Geometr&iacute;a",
+        assetKey: "geometric",
+        badge: "Geometric",
+        placeholderName: "la geometr&iacute;a",
+        loadedText: "Geometr&iacute;a 3D cargada"
+      },
+      velocity: {
+        label: "Velocidad H2-O2",
+        assetKey: null,
+        badge: "Velocidad H2-O2",
+        placeholderName: "el campo de velocidad H2-O2",
+        loadedText: "Campo de velocidad cargado"
+      },
+      polarization: {
+        label: "Curva de polarizaci&oacute;n",
+        assetKey: "polarization",
+        badge: "Polarization curve",
+        placeholderName: "la curva de polarizaci&oacute;n",
+        loadedText: "Curva cargada"
+      },
+      density: {
+        label: "Curva de densidad",
+        assetKey: "density",
+        badge: "Density curve",
+        placeholderName: "la curva de densidad",
+        loadedText: "Curva de densidad cargada"
+      },
+      overpotential: {
+        label: "Curva de sobrepotencial",
+        assetKey: null,
+        badge: "Overpotential curve",
+        placeholderName: "la curva de sobrepotencial",
+        loadedText: "Curva de sobrepotencial cargada",
+        errorText: "Imagen no disponible para esta combinaci&oacute;n de filtros."
+      },
+      n2_h2o: {
+        label: "Fracci&oacute;n molar N2-H2O",
+        assetKey: null,
+        badge: "Fraccion molar N2-H2O",
+        placeholderName: "el resultado param&eacute;trico N2-H2O",
+        loadedText: "Resultado param&eacute;trico cargado"
+      },
+      h2_o2: {
+        label: "Fracci&oacute;n molar H2-O2",
+        assetKey: null,
+        badge: "Fraccion molar H2-O2",
+        placeholderName: "el resultado param&eacute;trico H2-O2",
+        loadedText: "Resultado param&eacute;trico cargado"
+      },
+      lineas_h2_o2: {
+        label: "L&iacute;neas de corriente H2-O2",
+        assetKey: null,
+        badge: "Lineas de corriente H2-O2",
+        placeholderName: "las l&iacute;neas de corriente H2-O2",
+        loadedText: "L&iacute;neas de corriente cargadas"
+      },
+      lineas_n2_h2o: {
+        label: "L&iacute;neas de corriente N2-H2O",
+        assetKey: null,
+        badge: "Lineas de corriente N2-H2O",
+        placeholderName: "las l&iacute;neas de corriente N2-H2O",
+        loadedText: "L&iacute;neas de corriente cargadas"
+      }
+    };
+
+    const COMSOL_COMMON_ASSETS = {
+      mesh: "assets/comsol/Mesh.glb",
+      geometric: "assets/comsol/Geometric.glb"
+    };
+
+    const COMSOL_PARAMETRIC_RESULTS = {
+      n2_h2o: {
+        label: "Fracci&oacute;n molar N2-H2O",
+        folder: "FraccionMolarN2-H20",
+        foldersByStudy: {
+          "700": "FraccionMolarN2-H2O",
+          "750": "FraccionMolarN2-H2O"
+        },
+        filePrefix: "PilaN2-H20",
+        description: "Explora combinaciones param&eacute;tricas",
+        unit: "Fracci&oacute;n molar",
+        enabled: true
+      },
+      h2_o2: {
+        label: "Fracci&oacute;n molar H2-O2",
+        folder: "FraccionMolarH2-O2",
+        filePrefix: "PilaH2-O2",
+        description: "Explora combinaciones param&eacute;tricas",
+        unit: "Fracci&oacute;n molar",
+        enabled: true
+      },
+      lineas_h2_o2: {
+        label: "L&iacute;neas de corriente H2-O2",
+        folder: "LineasDeCorrienteH2-O2",
+        filePrefix: "LineasCorrienteH2-O2",
+        description: "Explora combinaciones param&eacute;tricas",
+        unit: "Flujo total y fracci&oacute;n molar",
+        enabled: true
+      },
+      lineas_n2_h2o: {
+        label: "L&iacute;neas de corriente N2-H2O",
+        folder: "LineasDeCorrienteN2-H2O",
+        filePrefix: "LineasCorrienteN2-H2O",
+        description: "Explora combinaciones param&eacute;tricas",
+        unit: "Flujo total y fracci&oacute;n molar",
+        enabled: true
+      },
+      velocity: {
+        label: "Velocidad H2-O2",
+        folder: "VelocidadH2-O2",
+        filePrefix: "VelocidadH2-O2",
+        jpegMh2Aliases: {
+          "6.88": "6.68"
+        },
+        description: "Explora combinaciones param&eacute;tricas",
+        unit: "Velocidad (m/s)",
+        enabled: true
+      }
+    };
+
+    const COMSOL_STUDY_PARAM_CONFIG = {
+      "700": {
+        folder: "Estudio700",
+        sigma: "0,3 S/m",
+        mh2Values: ["5.58", "6.88", "1.38", "2.70", "8.20"],
+        voltageValues: ["1.1", "1", "0.9", "0.8", "0.7"]
+      },
+      "750": {
+        folder: "Estudio750",
+        sigma: "1 S/m",
+        mh2Values: ["5.58", "6.88", "1.38", "2.70", "8.20"],
+        voltageValues: ["1.1", "1", "0.9", "0.8", "0.7"]
+      },
+      "800": {
+        folder: "Estudio800",
+        sigma: "10 S/m",
+        mh2Values: ["5.58", "6.88", "1.38", "2.70"],
+        voltageValues: ["1.1", "1", "0.9", "0.8", "0.7"]
+      },
+      "850": {
+        folder: "Estudio850",
+        sigma: "1200 S/m",
+        mh2Values: ["5.58", "6.88", "1.38", "2.70"],
+        voltageValues: ["1.1", "1", "0.9", "0.8", "0.7"]
+      }
+    };
+
+    const COMSOL_OVERPOTENTIAL_COMPONENTS = [
+      { id: "todos", label: "Todos" },
+      { id: "electrolito", label: "Electrolito" },
+      { id: "hidrogeno", label: "Hidr&oacute;geno" },
+      { id: "oxigeno", label: "Ox&iacute;geno" },
+      { id: "electrones", label: "Electrones" }
+    ];
+
+    const COMSOL_OVERPOTENTIAL_COMPONENT_FILE_NAMES = {
+      todos: "",
+      electrolito: "Electrolito",
+      hidrogeno: "Hidrogeno",
+      oxigeno: "Oxigeno",
+      electrones: "Electrones"
+    };
+
+    const COMSOL_OVERPOTENTIAL_FLOWS = [
+      { id: "complete", label: "Todos", value: null },
+      { id: "mh2_1_38", label: "mH2 = 1,38", value: "1.38" },
+      { id: "mh2_2_70", label: "mH2 = 2,70", value: "2.70" },
+      { id: "mh2_5_58", label: "mH2 = 5,58", value: "5.58" },
+      { id: "mh2_6_88", label: "mH2 = 6,88", value: "6.88" },
+      { id: "mh2_8_20", label: "mH2 = 8,20", value: "8.20" }
+    ];
+
+    const COMSOL_POLARIZATION_FILTERS = {
+      complete: {
+        label: "Todos los caudales",
+        assetKey: "complete"
+      },
+      mh2_5_58: {
+        label: "m&#775;H<sub>2</sub> = 5,58&middot;10<sup>-11</sup> kg/s",
+        assetKey: "mh2_5_58"
+      },
+      mh2_6_88: {
+        label: "m&#775;H<sub>2</sub> = 6,88&middot;10<sup>-11</sup> kg/s",
+        assetKey: "mh2_6_88"
+      },
+      mh2_1_38: {
+        label: "m&#775;H<sub>2</sub> = 1,38&middot;10<sup>-10</sup> kg/s",
+        assetKey: "mh2_1_38"
+      },
+      mh2_2_70: {
+        label: "m&#775;H<sub>2</sub> = 2,70&middot;10<sup>-10</sup> kg/s",
+        assetKey: "mh2_2_70"
+      }
+    };
+
+    const COMSOL_POLARIZATION_FILTERS_BY_STUDY = {
+      "700": {
+        complete: {
+          label: "Completa",
+          assetKey: "complete"
+        },
+        mh2_5_58: {
+          label: "m&#775;H<sub>2</sub> = 5,58&middot;10<sup>-11</sup> kg/s",
+          assetKey: "mh2_5_58"
+        },
+        mh2_6_88: {
+          label: "m&#775;H<sub>2</sub> = 6,88&middot;10<sup>-11</sup> kg/s",
+          assetKey: "mh2_6_88"
+        },
+        mh2_1_38: {
+          label: "m&#775;H<sub>2</sub> = 1,38&middot;10<sup>-10</sup> kg/s",
+          assetKey: "mh2_1_38"
+        },
+        mh2_2_70: {
+          label: "m&#775;H<sub>2</sub> = 2,70&middot;10<sup>-10</sup> kg/s",
+          assetKey: "mh2_2_70"
+        },
+        mh2_8_20: {
+          label: "m&#775;H<sub>2</sub> = 8,20&middot;10<sup>-10</sup> kg/s",
+          assetKey: "mh2_8_20"
+        }
+      },
+      "750": {
+        complete: {
+          label: "Completa",
+          assetKey: "complete"
+        },
+        mh2_5_58: {
+          label: "m&#775;H<sub>2</sub> = 5,58&middot;10<sup>-11</sup> kg/s",
+          assetKey: "mh2_5_58"
+        },
+        mh2_6_88: {
+          label: "m&#775;H<sub>2</sub> = 6,88&middot;10<sup>-11</sup> kg/s",
+          assetKey: "mh2_6_88"
+        },
+        mh2_1_38: {
+          label: "m&#775;H<sub>2</sub> = 1,38&middot;10<sup>-10</sup> kg/s",
+          assetKey: "mh2_1_38"
+        },
+        mh2_2_70: {
+          label: "m&#775;H<sub>2</sub> = 2,70&middot;10<sup>-10</sup> kg/s",
+          assetKey: "mh2_2_70"
+        },
+        mh2_8_20: {
+          label: "m&#775;H<sub>2</sub> = 8,20&middot;10<sup>-10</sup> kg/s",
+          assetKey: "mh2_8_20"
+        }
+      }
+    };
+
+    const COMSOL_CAMERA_ORBIT_PREDETERMINADA = "35deg 65deg auto";
+    const COMSOL_CAMERA_ORBIT_SUPERIOR = "0deg 8deg auto";
+    const COMSOL_CAMERA_TARGET_PREDETERMINADA = "auto auto auto";
+    const COMSOL_FIELD_OF_VIEW_PREDETERMINADO = "30deg";
+    const COMSOL_FIELD_OF_VIEW_SUPERIOR = "30deg";
+
+    let comsolStudyActivo = "850";
+    let comsolResultadoActivo = "n2_h2o";
+    let comsolFiltroPolarizacion = "complete";
+    let comsolPolarizationZoom = 1;
+    let comsolPolarizationOffsetX = 0;
+    let comsolPolarizationOffsetY = 0;
+    let comsolPolarizationDragging = false;
+    let comsolPolarizationDragStartX = 0;
+    let comsolPolarizationDragStartY = 0;
+    let comsolPolarizationStartOffsetX = 0;
+    let comsolPolarizationStartOffsetY = 0;
+    let comsolModelRotationActive = true;
+    let comsolModeloRotacionVertical = 0;
+    let comsolModeloRotacionHorizontal = 0;
+    let comsolOverpotentialComponent = "todos";
+    let comsolOverpotentialFlow = "complete";
+    const comsolParametricSelection = {};
+
+    function mostrarSeccionTFG(seccion) {
+      const sofc = document.getElementById("seccion-sofc");
+      const comsol = document.getElementById("seccion-comsol");
+      const tabSofc = document.getElementById("tab-sofc");
+      const tabComsol = document.getElementById("tab-comsol");
+
+      if (!sofc || !comsol) return;
+
+      const mostrarComsol = seccion === "comsol";
+      sofc.style.display = mostrarComsol ? "none" : "block";
+      comsol.style.display = mostrarComsol ? "block" : "none";
+
+      if (tabSofc) {
+        tabSofc.classList.toggle("active", !mostrarComsol);
+        tabSofc.setAttribute("aria-selected", String(!mostrarComsol));
+      }
+      if (tabComsol) {
+        tabComsol.classList.toggle("active", mostrarComsol);
+        tabComsol.setAttribute("aria-selected", String(mostrarComsol));
+      }
+
+      if (mostrarComsol) comsolRenderizarDashboard();
+    }
+
+    function comsolSeleccionarStudy(studyId) {
+      if (!COMSOL_STUDIES[studyId]) return;
+      const mantenerSobrepotencial = comsolResultadoActivo === "overpotential";
+      comsolStudyActivo = studyId;
+      if (!mantenerSobrepotencial) comsolResultadoActivo = comsolObtenerResultadoInicial(studyId);
+      comsolFiltroPolarizacion = "complete";
+      comsolReiniciarEstadoPolarizacion();
+      comsolRenderizarDashboard();
+    }
+
+    function comsolObtenerResultadoInicial(studyId) {
+      return comsolEsResultadoParametrico("n2_h2o") ? "n2_h2o" : "mesh";
+    }
+
+    function comsolSeleccionarResultado(tipo) {
+      if (!COMSOL_RESULTS[tipo]) return;
+      const resultadoAnterior = comsolResultadoActivo;
+      comsolResultadoActivo = tipo;
+      if (resultadoAnterior !== tipo) comsolFiltroPolarizacion = "complete";
+      if (resultadoAnterior !== tipo || !comsolEsCurvaImagen(tipo)) comsolReiniciarEstadoPolarizacion();
+      comsolRenderizarDashboard();
+    }
+
+    function comsolEsCurvaImagen(tipo) {
+      return tipo === "polarization" || tipo === "density" || tipo === "overpotential";
+    }
+
+    function comsolEsResultadoParametrico(resultId) {
+      const resultado = COMSOL_PARAMETRIC_RESULTS[resultId];
+      return Boolean(resultado && resultado.enabled);
+    }
+
+    function comsolObtenerConfiguracionParametrica(studyId, resultId) {
+      const study = COMSOL_STUDY_PARAM_CONFIG[studyId];
+      const result = COMSOL_PARAMETRIC_RESULTS[resultId];
+      if (!study || !result || !result.enabled) return null;
+      return { study, result };
+    }
+
+    function comsolObtenerSeleccionParametrica(studyId, resultId) {
+      const configuracion = comsolObtenerConfiguracionParametrica(studyId, resultId);
+      if (!configuracion) return null;
+
+      const clave = `${studyId}:${resultId}`;
+      const seleccionActual = comsolParametricSelection[clave] || {};
+      const mh2 = configuracion.study.mh2Values.includes(seleccionActual.mh2)
+        ? seleccionActual.mh2
+        : configuracion.study.mh2Values[0];
+      const voltage = configuracion.study.voltageValues.includes(seleccionActual.voltage)
+        ? seleccionActual.voltage
+        : configuracion.study.voltageValues[0];
+
+      comsolParametricSelection[clave] = { mh2, voltage };
+      return comsolParametricSelection[clave];
+    }
+
+    function comsolConstruirRutaParametrica(studyId, resultId, mh2, voltage) {
+      const configuracion = comsolObtenerConfiguracionParametrica(studyId, resultId);
+      if (!configuracion) return null;
+      const resultFolder = configuracion.result.foldersByStudy?.[studyId] || configuracion.result.folder;
+      return `assets/comsol/${configuracion.study.folder}/${resultFolder}/${configuracion.result.filePrefix}_mh2-${mh2}_V-${voltage}.glb`;
+    }
+
+    function comsolObtenerJPEGDesdeGLB(glbPath, resultId, mh2) {
+      if (typeof glbPath !== "string") return "";
+
+      const resultado = COMSOL_PARAMETRIC_RESULTS[resultId];
+      const mh2JPEG = resultado?.jpegMh2Aliases?.[mh2];
+      const rutaJPEG = glbPath.replace(/\.glb$/i, ".jpeg");
+      return mh2JPEG
+        ? rutaJPEG.replace(`_mh2-${mh2}_`, `_mh2-${mh2JPEG}_`)
+        : rutaJPEG;
+    }
+
+    function comsolActualizarLeyendaJPEG(jpegPath) {
+      const imagen = document.getElementById("comsol-jpeg-legend-image");
+      const fallback = document.getElementById("comsol-jpeg-legend-fallback");
+      if (!imagen || !fallback) return;
+
+      imagen.hidden = false;
+      imagen.classList.add("comsol-loading");
+      fallback.hidden = true;
+      imagen.alt = "Escala de colores COMSOL para la combinacion seleccionada";
+      imagen.src = jpegPath;
+    }
+
+    function comsolLeyendaJPEGCargada() {
+      const imagen = document.getElementById("comsol-jpeg-legend-image");
+      const fallback = document.getElementById("comsol-jpeg-legend-fallback");
+      if (imagen) {
+        imagen.hidden = false;
+        imagen.classList.remove("comsol-loading");
+      }
+      if (fallback) fallback.hidden = true;
+    }
+
+    function comsolLeyendaJPEGError() {
+      const imagen = document.getElementById("comsol-jpeg-legend-image");
+      const fallback = document.getElementById("comsol-jpeg-legend-fallback");
+      if (imagen) {
+        imagen.hidden = true;
+        imagen.classList.remove("comsol-loading");
+      }
+      if (fallback) fallback.hidden = false;
+    }
+
+    function comsolFormatearCaudalParametrico(mh2) {
+      const exponente = mh2 === "5.58" || mh2 === "6.88" ? "-11" : "-10";
+      return `${formatearDecimalVisual(mh2)}e${exponente} kg/s`;
+    }
+
+    function comsolObtenerFlujosSobrepotencial(studyId) {
+      const configuracion = COMSOL_STUDY_PARAM_CONFIG[studyId];
+      if (!configuracion) return [];
+      return COMSOL_OVERPOTENTIAL_FLOWS.filter((flujo) => (
+        flujo.id === "complete" || configuracion.mh2Values.includes(flujo.value)
+      ));
+    }
+
+    function comsolNormalizarSeleccionSobrepotencial(studyId) {
+      const componenteValido = COMSOL_OVERPOTENTIAL_COMPONENTS.some(
+        (componente) => componente.id === comsolOverpotentialComponent
+      );
+      if (!componenteValido) comsolOverpotentialComponent = "todos";
+
+      const flujosDisponibles = comsolObtenerFlujosSobrepotencial(studyId);
+      if (!flujosDisponibles.some((flujo) => flujo.id === comsolOverpotentialFlow)) {
+        comsolOverpotentialFlow = "complete";
+      }
+    }
+
+    function comsolConstruirRutaSobrepotencial(studyId, componentId, flowId) {
+      const componentFileName = COMSOL_OVERPOTENTIAL_COMPONENT_FILE_NAMES[componentId];
+      const flow = COMSOL_OVERPOTENTIAL_FLOWS.find((item) => item.id === flowId);
+      if (!COMSOL_STUDIES[studyId] || componentFileName === undefined || !flow) return "";
+
+      const baseFolder = `assets/comsol/Estudio${studyId}/CurvaSobrepotencial`;
+      const componentPart = componentFileName ? `_${componentFileName}` : "";
+      const flowPart = flow.id === "complete" ? "_Completa" : `_mh2-${flow.value}`;
+      return `${baseFolder}/CurvaSobrepotencial${componentPart}${flowPart}.jpeg`;
+    }
+
+    function comsolRenderizarSobrepotencial(study) {
+      const body = document.getElementById("comsol-result-body");
+      const estado = document.getElementById("comsol-viewer-status");
+      const resultado = COMSOL_RESULTS.overpotential;
+      const configuracion = COMSOL_STUDY_PARAM_CONFIG[comsolStudyActivo];
+      if (!body || !study || !configuracion) return;
+
+      comsolNormalizarSeleccionSobrepotencial(comsolStudyActivo);
+      const flujosDisponibles = comsolObtenerFlujosSobrepotencial(comsolStudyActivo);
+      const src = comsolConstruirRutaSobrepotencial(
+        comsolStudyActivo,
+        comsolOverpotentialComponent,
+        comsolOverpotentialFlow
+      );
+      const opcionesComponentes = COMSOL_OVERPOTENTIAL_COMPONENTS.map((componente) => `
+        <option value="${componente.id}" ${componente.id === comsolOverpotentialComponent ? "selected" : ""}>${componente.label}</option>
+      `).join("");
+      const opcionesCaudal = flujosDisponibles.map((flujo) => `
+        <option value="${flujo.id}" ${flujo.id === comsolOverpotentialFlow ? "selected" : ""}>${flujo.label}</option>
+      `).join("");
+
+      if (estado) {
+        estado.className = "comsol-status";
+        estado.innerHTML = "Cargando imagen";
+      }
+
+      body.innerHTML = `
+        <div class="comsol-polarization-shell">
+          <div class="comsol-polarization-toolbar">
+            <div class="comsol-overpotential-filter-row" aria-label="Filtros de curva de sobrepotencial">
+              <label class="comsol-overpotential-field">
+                <span>Sobrepotencial</span>
+                <select id="comsol-overpotential-component" class="comsol-parametric-select" onchange="comsolCambiarFiltroSobrepotencial()">
+                  ${opcionesComponentes}
+                </select>
+              </label>
+              <label class="comsol-overpotential-field">
+                <span>Caudal H<sub>2</sub></span>
+                <select id="comsol-overpotential-flow" class="comsol-parametric-select" onchange="comsolCambiarFiltroSobrepotencial()">
+                  ${opcionesCaudal}
+                </select>
+              </label>
+              <div class="comsol-overpotential-meta">
+                <span>Conductividad fija</span>
+                <strong>&sigma; = ${configuracion.sigma}</strong>
+              </div>
+            </div>
+            <div class="comsol-image-tool-row">
+              <button type="button" class="comsol-tool-button" onclick="comsolZoomPolarizacion(0.2)">Zoom +</button>
+              <button type="button" class="comsol-tool-button" onclick="comsolZoomPolarizacion(-0.2)">Zoom -</button>
+              <button type="button" class="comsol-tool-button" onclick="comsolResetZoomPolarizacion()">Reset zoom</button>
+              <button type="button" class="comsol-tool-button comsol-fullscreen-button" onclick="comsolAlternarPantallaCompleta('comsol-polarization-stage')">Pantalla completa</button>
+              <span id="comsol-zoom-value" class="comsol-status">100%</span>
+            </div>
+          </div>
+          <div id="comsol-polarization-stage" class="comsol-image-stage">
+            <img id="comsol-polarization-image" class="comsol-polarization-image comsol-loading" src="${src}" alt="${resultado.badge} del ${study.altLabel}" draggable="false">
+            <div id="comsol-image-error" class="comsol-image-error" hidden>${resultado.errorText}</div>
+          </div>
+        </div>
+      `;
+
+      comsolConfigurarImagenPolarizacion(null, resultado);
+    }
+
+    function comsolCambiarFiltroSobrepotencial() {
+      const selectorComponente = document.getElementById("comsol-overpotential-component");
+      const selectorCaudal = document.getElementById("comsol-overpotential-flow");
+      if (!selectorComponente || !selectorCaudal) return;
+
+      comsolOverpotentialComponent = selectorComponente.value;
+      comsolOverpotentialFlow = selectorCaudal.value;
+      comsolNormalizarSeleccionSobrepotencial(comsolStudyActivo);
+      comsolReiniciarEstadoPolarizacion();
+      comsolActualizarImagenSobrepotencial();
+    }
+
+    function comsolActualizarImagenSobrepotencial() {
+      const imagen = document.getElementById("comsol-polarization-image");
+      const estado = document.getElementById("comsol-viewer-status");
+      const errorCarga = document.getElementById("comsol-image-error");
+      const study = COMSOL_STUDIES[comsolStudyActivo];
+      if (!imagen || !study) return;
+
+      const src = comsolConstruirRutaSobrepotencial(
+        comsolStudyActivo,
+        comsolOverpotentialComponent,
+        comsolOverpotentialFlow
+      );
+      if (!src) return;
+
+      if (estado) {
+        estado.className = "comsol-status";
+        estado.innerHTML = "Cargando imagen";
+      }
+      if (errorCarga) errorCarga.hidden = true;
+      imagen.hidden = false;
+      imagen.classList.add("comsol-loading");
+      imagen.alt = `${COMSOL_RESULTS.overpotential.badge} del ${study.altLabel}`;
+      imagen.src = src;
+      comsolAplicarTransformPolarizacion();
+    }
+
+    function comsolRenderizarSelectorParametrico(studyId, resultId) {
+      const configuracion = comsolObtenerConfiguracionParametrica(studyId, resultId);
+      const seleccion = comsolObtenerSeleccionParametrica(studyId, resultId);
+      if (!configuracion || !seleccion) return "";
+
+      const opcionesCaudal = configuracion.study.mh2Values.map((mh2) => `
+        <option value="${mh2}" ${mh2 === seleccion.mh2 ? "selected" : ""}>${comsolFormatearCaudalParametrico(mh2)}</option>
+      `).join("");
+      const opcionesVoltaje = configuracion.study.voltageValues.map((voltage) => `
+        <option value="${voltage}" ${voltage === seleccion.voltage ? "selected" : ""}>${formatearDecimalVisual(voltage)} V</option>
+      `).join("");
+
+      return `
+        <section class="comsol-parametric-panel" aria-label="Selector de resultados parametricos COMSOL">
+          <div>
+            <strong class="comsol-parametric-title">${configuracion.result.description}</strong>
+            <p class="comsol-parametric-description">Selecciona el caudal de H<sub>2</sub> y el voltaje de celda para cargar el resultado precomputado.</p>
+          </div>
+          <div class="comsol-parametric-controls">
+            <label class="comsol-parametric-field">
+              <span>Caudal H<sub>2</sub></span>
+              <select id="comsol-parametric-mh2" class="comsol-parametric-select" onchange="comsolActualizarResultadoParametrico()">
+                ${opcionesCaudal}
+              </select>
+            </label>
+            <div class="comsol-parametric-fixed">
+              <span>Conductividad fija</span>
+              <strong>&sigma; = ${configuracion.study.sigma}</strong>
+            </div>
+            <label class="comsol-parametric-field">
+              <span>Voltaje de celda</span>
+              <select id="comsol-parametric-voltage" class="comsol-parametric-select" onchange="comsolActualizarResultadoParametrico()">
+                ${opcionesVoltaje}
+              </select>
+            </label>
+          </div>
+        </section>
+      `;
+    }
+
+    function comsolRenderizarResultadoParametrico(studyId, resultId) {
+      const study = COMSOL_STUDIES[studyId];
+      const seleccion = comsolObtenerSeleccionParametrica(studyId, resultId);
+      if (!study || !seleccion) {
+        comsolMostrarPlaceholder(resultId, study || COMSOL_STUDIES[comsolStudyActivo]);
+        return;
+      }
+
+      const glbPath = comsolConstruirRutaParametrica(studyId, resultId, seleccion.mh2, seleccion.voltage);
+      const jpegPath = comsolObtenerJPEGDesdeGLB(glbPath, resultId, seleccion.mh2);
+      comsolRenderizarModelo(resultId, glbPath, study, {
+        panel: comsolRenderizarSelectorParametrico(studyId, resultId),
+        parametric: true,
+        jpegPath,
+        loadingText: "Cargando resultado param&eacute;trico",
+        loadedText: "Resultado param&eacute;trico cargado",
+        errorStatusText: "Resultado no disponible para esta combinaci&oacute;n de par&aacute;metros",
+        errorMessage: "Resultado no disponible para esta combinaci&oacute;n de par&aacute;metros"
+      });
+    }
+
+    function comsolActualizarResultadoParametrico() {
+      if (!comsolEsResultadoParametrico(comsolResultadoActivo)) return;
+
+      const configuracion = comsolObtenerConfiguracionParametrica(comsolStudyActivo, comsolResultadoActivo);
+      const selectorMh2 = document.getElementById("comsol-parametric-mh2");
+      const selectorVoltaje = document.getElementById("comsol-parametric-voltage");
+      const visor = comsolObtenerVisor();
+      const estado = document.getElementById("comsol-viewer-status");
+      const errorCarga = document.getElementById("comsol-model-error");
+      const rutaError = document.getElementById("comsol-model-error-path");
+      const leyendaMh2 = document.getElementById("comsol-parametric-legend-mh2");
+      const leyendaVoltaje = document.getElementById("comsol-parametric-legend-voltage");
+      if (!configuracion || !selectorMh2 || !selectorVoltaje || !visor) return;
+
+      const mh2 = selectorMh2.value;
+      const voltage = selectorVoltaje.value;
+      if (!configuracion.study.mh2Values.includes(mh2) || !configuracion.study.voltageValues.includes(voltage)) return;
+
+      comsolParametricSelection[`${comsolStudyActivo}:${comsolResultadoActivo}`] = { mh2, voltage };
+      const glbPath = comsolConstruirRutaParametrica(comsolStudyActivo, comsolResultadoActivo, mh2, voltage);
+      const jpegPath = comsolObtenerJPEGDesdeGLB(glbPath, comsolResultadoActivo, mh2);
+
+      if (estado) {
+        estado.className = "comsol-status";
+        estado.innerHTML = "Cargando resultado param&eacute;trico";
+      }
+      if (errorCarga) errorCarga.hidden = true;
+      if (rutaError) rutaError.textContent = glbPath;
+      if (leyendaMh2) leyendaMh2.textContent = comsolFormatearCaudalParametrico(mh2);
+      if (leyendaVoltaje) leyendaVoltaje.textContent = `${formatearDecimalVisual(voltage)} V`;
+
+      visor.setAttribute("src", glbPath);
+      comsolActualizarLeyendaJPEG(jpegPath);
+    }
+
+    function comsolRenderizarDashboard() {
+      comsolRenderizarEstudios();
+      comsolRenderizarTabs();
+      comsolRenderizarResultado();
+    }
+
+    function comsolRenderizarEstudios() {
+      Object.keys(COMSOL_STUDIES).forEach((studyId) => {
+        const boton = document.getElementById(`comsol-study-${studyId}`);
+        if (!boton) return;
+        const activo = studyId === comsolStudyActivo;
+        boton.classList.toggle("comsol-active", activo);
+        boton.setAttribute("aria-pressed", String(activo));
+      });
+    }
+
+    function comsolRenderizarTabs() {
+      Object.keys(COMSOL_RESULTS).forEach((tipo) => {
+        const boton = document.getElementById(`comsol-result-${tipo}`);
+        if (!boton) return;
+        boton.classList.toggle("comsol-active", tipo === comsolResultadoActivo);
+      });
+    }
+
+    function comsolRenderizarResultado() {
+      const study = COMSOL_STUDIES[comsolStudyActivo];
+      const resultado = COMSOL_RESULTS[comsolResultadoActivo];
+      const titulo = document.getElementById("comsol-result-title");
+      const estado = document.getElementById("comsol-viewer-status");
+      if (!study || !resultado) return;
+
+      if (titulo) titulo.innerHTML = resultado.label;
+      if (estado) {
+        estado.className = "comsol-status";
+        estado.innerHTML = "Preparando resultado";
+      }
+
+      if (comsolEsResultadoParametrico(comsolResultadoActivo)) {
+        comsolRenderizarResultadoParametrico(comsolStudyActivo, comsolResultadoActivo);
+        return;
+      }
+
+      if (comsolResultadoActivo === "overpotential") {
+        comsolRenderizarSobrepotencial(study);
+        return;
+      }
+
+      if (comsolEsCurvaImagen(comsolResultadoActivo)) {
+        comsolRenderizarPolarizacion(study);
+        return;
+      }
+
+      const asset = COMSOL_COMMON_ASSETS[comsolResultadoActivo]
+        || study.assets[resultado.assetKey];
+      if (!asset) {
+        comsolMostrarPlaceholder(comsolResultadoActivo, study);
+        return;
+      }
+
+      comsolRenderizarModelo(comsolResultadoActivo, asset, study);
+    }
+
+    function comsolRenderizarModelo(tipo, asset, study, opciones = {}) {
+      const body = document.getElementById("comsol-result-body");
+      const estado = document.getElementById("comsol-viewer-status");
+      const resultado = COMSOL_RESULTS[tipo];
+      if (!body || !resultado) return;
+
+      if (estado) {
+        estado.className = "comsol-status";
+        estado.innerHTML = opciones.loadingText || "Cargando modelo 3D";
+      }
+
+      body.innerHTML = `
+        ${opciones.panel || ""}
+        <div class="comsol-viewer-shell">
+          <div id="comsol-viewer-stage" class="comsol-viewer-stage">
+            <model-viewer
+              id="comsol-model-viewer"
+              src="${asset}"
+              alt="${resultado.badge} exportado desde COMSOL para ${study.altLabel}"
+              camera-controls
+              ${comsolModelRotationActive ? "auto-rotate" : ""}
+              interaction-prompt="none"
+              touch-action="none"
+              camera-orbit="${COMSOL_CAMERA_ORBIT_PREDETERMINADA}"
+              min-camera-orbit="auto 0deg auto"
+              max-camera-orbit="auto 180deg auto"
+              camera-target="${COMSOL_CAMERA_TARGET_PREDETERMINADA}"
+              field-of-view="${COMSOL_FIELD_OF_VIEW_PREDETERMINADO}"
+              min-field-of-view="15deg"
+              max-field-of-view="65deg"
+              orientation="${comsolObtenerOrientacionModelo()}"
+              disable-pan
+              shadow-intensity="0.8"
+              exposure="1">
+            </model-viewer>
+            <div class="comsol-viewer-badge">${resultado.badge}</div>
+            <div class="comsol-viewer-tools">
+              <button type="button" class="comsol-tool-button" onclick="comsolReiniciarVista()">Reiniciar vista</button>
+              <button type="button" class="comsol-tool-button" onclick="comsolVistaPilaDePie()">Vista vertical</button>
+              <button type="button" id="comsol-rotation-button" class="comsol-tool-button" onclick="comsolAlternarRotacion()">Rotaci&oacute;n ON</button>
+              <button type="button" class="comsol-tool-button comsol-fullscreen-button" onclick="comsolAlternarPantallaCompleta('comsol-viewer-stage')">Pantalla completa</button>
+            </div>
+            <div id="comsol-model-error" class="comsol-model-error ${opciones.parametric ? "comsol-parametric-error" : ""}" hidden>
+              <span>${opciones.errorMessage || "No se ha podido cargar el archivo GLB. Comprueba que existe en assets/comsol y abre la web desde servidor local."}</span>
+              <br><code id="comsol-model-error-path">${asset}</code>
+            </div>
+          </div>
+          ${comsolRenderizarLeyenda(tipo, study, opciones)}
+        </div>
+      `;
+
+      const visor = comsolObtenerVisor();
+      const errorCarga = document.getElementById("comsol-model-error");
+      comsolActualizarBotonRotacion();
+      if (opciones.jpegPath) comsolActualizarLeyendaJPEG(opciones.jpegPath);
+
+      if (!visor) return;
+      visor.addEventListener("load", () => {
+        if (estado) {
+          estado.className = "comsol-status comsol-status-loaded";
+          estado.innerHTML = opciones.loadedText || resultado.loadedText;
+        }
+        if (errorCarga) errorCarga.hidden = true;
+      });
+      visor.addEventListener("error", () => {
+        if (estado) {
+          estado.className = "comsol-status comsol-status-error";
+          estado.innerHTML = opciones.errorStatusText || "Error al cargar GLB";
+        }
+        if (errorCarga) errorCarga.hidden = false;
+      });
+      visor.addEventListener("dblclick", comsolReiniciarVista);
+    }
+
+    function comsolRenderizarLeyenda(tipo, study, opciones = {}) {
+      if (tipo === "mesh" || tipo === "geometric") {
+        const esGeometria = tipo === "geometric";
+        return `
+        `;
+      }
+
+      if (tipo === "velocity" && !comsolEsResultadoParametrico(tipo)) {
+        return `
+          <aside class="comsol-legend" aria-label="Leyenda de velocidad COMSOL">
+            <h3>Velocity field<br>Velocidad (m/s)</h3>
+            <span class="comsol-legend-unit">Magnitud de velocidad</span>
+            <div class="comsol-legend-scale">
+              <div class="comsol-legend-bar" aria-hidden="true"></div>
+              <div class="comsol-legend-values" aria-label="Escala de velocidad">
+                <span>0,42 max</span>
+                <span>0,31</span>
+                <span>0,22 medio</span>
+                <span>0,14</span>
+                <span>0,06</span>
+                <span>0,01 min</span>
+              </div>
+            </div>
+            <div class="comsol-legend-note">Valores informativos<br>Unidad: m/s</div>
+          </aside>
+        `;
+      }
+
+      if (comsolEsResultadoParametrico(tipo)) {
+        const seleccion = comsolObtenerSeleccionParametrica(comsolStudyActivo, tipo);
+        const configuracion = comsolObtenerConfiguracionParametrica(comsolStudyActivo, tipo);
+        return `
+          <aside class="comsol-legend comsol-jpeg-legend comsol-jpeg-legend-${tipo}" aria-label="Escala COMSOL del resultado parametrico ${configuracion ? configuracion.result.label : tipo}">
+            <h3 class="comsol-jpeg-legend-title">Escala COMSOL</h3>
+            <span class="comsol-legend-unit">${configuracion ? configuracion.result.unit : "Fracci&oacute;n molar"}</span>
+            ${tipo === "h2_o2" || tipo === "lineas_h2_o2" || tipo === "velocity" ? `
+              <div class="comsol-jpeg-species-key" aria-label="Identificacion de las barras de escala">
+                <span class="comsol-species-o2">O<sub>2</sub></span>
+                <span class="comsol-species-h2">H<sub>2</sub></span>
+              </div>
+            ` : tipo === "n2_h2o" || tipo === "lineas_n2_h2o" ? `
+              <div class="comsol-jpeg-species-key" aria-label="Identificacion de las barras de escala">
+                <span class="comsol-species-o2">H<sub>2</sub>O</span>
+                <span class="comsol-species-h2">N<sub>2</sub></span>
+              </div>
+            ` : ""}
+            <div class="comsol-jpeg-legend-crop">
+              <img
+                id="comsol-jpeg-legend-image"
+                class="comsol-jpeg-legend-image comsol-loading"
+                alt="Escala de colores COMSOL"
+                onload="comsolLeyendaJPEGCargada()"
+                onerror="comsolLeyendaJPEGError()">
+              <div id="comsol-jpeg-legend-fallback" class="comsol-jpeg-legend-fallback" hidden>
+                Escala no disponible para esta combinaci&oacute;n
+              </div>
+            </div>
+            <ul class="comsol-mesh-details">
+              <li><strong>Caudal H<sub>2</sub>:</strong> <span id="comsol-parametric-legend-mh2">${seleccion ? comsolFormatearCaudalParametrico(seleccion.mh2) : "-"}</span></li>
+              <li><strong>Voltaje:</strong> <span id="comsol-parametric-legend-voltage">${seleccion ? `${formatearDecimalVisual(seleccion.voltage)} V` : "-"}</span></li>
+              <li><strong>Conductividad:</strong> ${configuracion ? configuracion.study.sigma : study.conductivity}</li>
+              <li><strong>Estudio:</strong> ${study.label}</li>
+            </ul>
+            <div class="comsol-legend-note">Resultado precomputado<br>Exportado desde COMSOL</div>
+          </aside>
+        `;
+      }
+
+      return `
+        <aside class="comsol-legend" aria-label="Leyenda de fraccion molar de hidrogeno">
+          <h3>Species H<sub>2</sub>:<br>Fracci&oacute;n molar (1)</h3>
+          <span class="comsol-legend-unit">Fracci&oacute;n molar adimensional</span>
+          <div class="comsol-legend-scale">
+            <div class="comsol-legend-bar" aria-hidden="true"></div>
+            <div class="comsol-legend-values" aria-label="Escala de valores">
+              <span>0,850</span>
+              <span>0,846</span>
+              <span>0,842</span>
+              <span>0,838</span>
+              <span>0,834</span>
+              <span>0,830</span>
+            </div>
+          </div>
+          <div class="comsol-legend-note">Unidad: (1)<br>Interpolaci&oacute;n lineal</div>
+        </aside>
+      `;
+    }
+
+    function comsolRenderizarPolarizacion(study) {
+      const body = document.getElementById("comsol-result-body");
+      const estado = document.getElementById("comsol-viewer-status");
+      const resultado = COMSOL_RESULTS[comsolResultadoActivo] || COMSOL_RESULTS.polarization;
+      const assets = study.assets[resultado.assetKey];
+      if (!body) return;
+
+      if (!assets) {
+        comsolMostrarPlaceholder(comsolResultadoActivo, study);
+        return;
+      }
+
+      const filtros = comsolObtenerFiltrosPolarizacion(study, assets);
+      if (!filtros[comsolFiltroPolarizacion]) comsolFiltroPolarizacion = "complete";
+      const filtro = filtros[comsolFiltroPolarizacion] || filtros.complete;
+      const src = assets[filtro.assetKey] || assets.complete;
+      if (!src) {
+        comsolMostrarPlaceholder(comsolResultadoActivo, study);
+        return;
+      }
+
+      if (estado) {
+        estado.className = "comsol-status";
+        estado.innerHTML = "Cargando imagen";
+      }
+
+      const botonesFiltro = Object.entries(filtros).map(([id, item]) => `
+        <button type="button" class="comsol-filter-button ${id === comsolFiltroPolarizacion ? "comsol-active" : ""}" onclick="comsolCambiarFiltroPolarizacion('${id}')">${item.label}</button>
+      `).join("");
+
+      body.innerHTML = `
+        <div class="comsol-polarization-shell">
+          <div class="comsol-polarization-toolbar">
+            <div class="comsol-filter-row" aria-label="Filtros de caudal de hidrogeno">
+              ${botonesFiltro}
+            </div>
+            <div class="comsol-image-tool-row">
+              <button type="button" class="comsol-tool-button" onclick="comsolZoomPolarizacion(0.2)">Zoom +</button>
+              <button type="button" class="comsol-tool-button" onclick="comsolZoomPolarizacion(-0.2)">Zoom -</button>
+              <button type="button" class="comsol-tool-button" onclick="comsolResetZoomPolarizacion()">Reset zoom</button>
+              <button type="button" class="comsol-tool-button comsol-fullscreen-button" onclick="comsolAlternarPantallaCompleta('comsol-polarization-stage')">Pantalla completa</button>
+              <span id="comsol-zoom-value" class="comsol-status">100%</span>
+            </div>
+          </div>
+          <div id="comsol-polarization-stage" class="comsol-image-stage">
+            <img id="comsol-polarization-image" class="comsol-polarization-image comsol-loading" src="${src}" alt="${resultado.badge} del ${study.altLabel}" draggable="false">
+          </div>
+        </div>
+      `;
+
+      comsolConfigurarImagenPolarizacion(filtro, resultado);
+    }
+
+    function comsolConfigurarImagenPolarizacion(filtro, resultado) {
+      const imagen = document.getElementById("comsol-polarization-image");
+      const estado = document.getElementById("comsol-viewer-status");
+      const stage = document.getElementById("comsol-polarization-stage");
+      const errorCarga = document.getElementById("comsol-image-error");
+      if (!imagen || !stage) return;
+
+      const marcarCargada = () => {
+        imagen.hidden = false;
+        imagen.classList.remove("comsol-loading");
+        if (errorCarga) errorCarga.hidden = true;
+        if (estado) {
+          estado.className = "comsol-status comsol-status-loaded";
+          estado.innerHTML = resultado.loadedText;
+        }
+      };
+
+      imagen.addEventListener("load", marcarCargada);
+      imagen.addEventListener("error", () => {
+        imagen.classList.remove("comsol-loading");
+        if (errorCarga) {
+          imagen.hidden = true;
+          errorCarga.hidden = false;
+        }
+        if (estado) {
+          estado.className = "comsol-status comsol-status-error";
+          estado.innerHTML = resultado.errorText || "Error al cargar JPEG";
+        }
+      });
+
+      if (imagen.complete && imagen.naturalWidth > 0) marcarCargada();
+
+      stage.addEventListener("pointerdown", comsolIniciarArrastrePolarizacion);
+      stage.addEventListener("pointermove", comsolMoverArrastrePolarizacion);
+      stage.addEventListener("pointerup", comsolFinalizarArrastrePolarizacion);
+      stage.addEventListener("pointerleave", comsolFinalizarArrastrePolarizacion);
+      stage.addEventListener("wheel", comsolZoomPolarizacionRueda, { passive: false });
+      stage.addEventListener("dblclick", () => comsolAlternarPantallaCompleta("comsol-polarization-stage"));
+      comsolAplicarTransformPolarizacion();
+    }
+
+    function comsolObtenerFiltrosPolarizacion(study, assets) {
+      const filtrosBase = COMSOL_POLARIZATION_FILTERS_BY_STUDY[comsolStudyActivo] || COMSOL_POLARIZATION_FILTERS;
+      const filtrosDisponibles = {};
+      Object.entries(filtrosBase).forEach(([id, item]) => {
+        if (assets && assets[item.assetKey]) filtrosDisponibles[id] = item;
+      });
+      return filtrosDisponibles;
+    }
+
+    function comsolCambiarFiltroPolarizacion(filtro) {
+      const study = COMSOL_STUDIES[comsolStudyActivo];
+      const resultado = COMSOL_RESULTS[comsolResultadoActivo] || COMSOL_RESULTS.polarization;
+      const assets = study && study.assets ? study.assets[resultado.assetKey] : null;
+      const filtros = comsolObtenerFiltrosPolarizacion(study, assets);
+      if (!filtros[filtro]) return;
+      comsolFiltroPolarizacion = filtro;
+      comsolReiniciarEstadoPolarizacion();
+      comsolRenderizarResultado();
+    }
+
+    function comsolZoomPolarizacion(delta) {
+      comsolAplicarZoomPolarizacion(delta);
+    }
+
+    function comsolZoomPolarizacionRueda(evento) {
+      evento.preventDefault();
+      const delta = evento.deltaY < 0 ? 0.16 : -0.16;
+      comsolAplicarZoomPolarizacion(delta, evento);
+    }
+
+    function comsolAplicarZoomPolarizacion(delta, evento) {
+      const zoomAnterior = comsolPolarizationZoom;
+      const zoomNuevo = Math.max(1, Math.min(4, Number((zoomAnterior + delta).toFixed(2))));
+      if (zoomNuevo === zoomAnterior) return;
+
+      if (evento && zoomNuevo > 1) {
+        const stage = document.getElementById("comsol-polarization-stage");
+        if (stage) {
+          const rect = stage.getBoundingClientRect();
+          const centroX = rect.left + rect.width / 2;
+          const centroY = rect.top + rect.height / 2;
+          const puntoX = evento.clientX - centroX;
+          const puntoY = evento.clientY - centroY;
+          const proporcion = zoomNuevo / zoomAnterior;
+          comsolPolarizationOffsetX = puntoX - (puntoX - comsolPolarizationOffsetX) * proporcion;
+          comsolPolarizationOffsetY = puntoY - (puntoY - comsolPolarizationOffsetY) * proporcion;
+        }
+      }
+
+      comsolPolarizationZoom = zoomNuevo;
+      if (zoomNuevo === 1) {
+        comsolPolarizationOffsetX = 0;
+        comsolPolarizationOffsetY = 0;
+      }
+      comsolAplicarTransformPolarizacion();
+    }
+
+    function comsolResetZoomPolarizacion() {
+      comsolReiniciarEstadoPolarizacion();
+      comsolAplicarTransformPolarizacion();
+    }
+
+    function comsolReiniciarEstadoPolarizacion() {
+      comsolPolarizationZoom = 1;
+      comsolPolarizationOffsetX = 0;
+      comsolPolarizationOffsetY = 0;
+      comsolPolarizationDragging = false;
+    }
+
+    function comsolAplicarTransformPolarizacion() {
+      const imagen = document.getElementById("comsol-polarization-image");
+      const stage = document.getElementById("comsol-polarization-stage");
+      const zoomLabel = document.getElementById("comsol-zoom-value");
+      if (!imagen) return;
+
+      imagen.style.transform = `translate(${comsolPolarizationOffsetX}px, ${comsolPolarizationOffsetY}px) scale(${comsolPolarizationZoom})`;
+      if (stage) stage.classList.toggle("comsol-draggable", comsolPolarizationZoom > 1);
+      if (zoomLabel) zoomLabel.innerHTML = `${Math.round(comsolPolarizationZoom * 100)}%`;
+    }
+
+    function comsolIniciarArrastrePolarizacion(evento) {
+      if (comsolPolarizationZoom <= 1) return;
+      const stage = document.getElementById("comsol-polarization-stage");
+      comsolPolarizationDragging = true;
+      comsolPolarizationDragStartX = evento.clientX;
+      comsolPolarizationDragStartY = evento.clientY;
+      comsolPolarizationStartOffsetX = comsolPolarizationOffsetX;
+      comsolPolarizationStartOffsetY = comsolPolarizationOffsetY;
+      if (stage) {
+        stage.classList.add("comsol-dragging");
+        if (typeof stage.setPointerCapture === "function") stage.setPointerCapture(evento.pointerId);
+      }
+    }
+
+    function comsolMoverArrastrePolarizacion(evento) {
+      if (!comsolPolarizationDragging || comsolPolarizationZoom <= 1) return;
+      const deltaX = evento.clientX - comsolPolarizationDragStartX;
+      const deltaY = evento.clientY - comsolPolarizationDragStartY;
+      comsolPolarizationOffsetX = comsolPolarizationStartOffsetX + deltaX;
+      comsolPolarizationOffsetY = comsolPolarizationStartOffsetY + deltaY;
+      comsolAplicarTransformPolarizacion();
+    }
+
+    function comsolFinalizarArrastrePolarizacion(evento) {
+      const stage = document.getElementById("comsol-polarization-stage");
+      comsolPolarizationDragging = false;
+      if (stage) {
+        stage.classList.remove("comsol-dragging");
+        if (evento && typeof stage.releasePointerCapture === "function") {
+          try { stage.releasePointerCapture(evento.pointerId); } catch (error) {}
+        }
+      }
+    }
+
+    function comsolMostrarPlaceholder(tipo, study) {
+      const body = document.getElementById("comsol-result-body");
+      const estado = document.getElementById("comsol-viewer-status");
+      const resultado = COMSOL_RESULTS[tipo] || COMSOL_RESULTS.species;
+      if (!body) return;
+
+      if (estado) {
+        estado.className = "comsol-status comsol-status-pending";
+        estado.innerHTML = "Pendiente de exportaci&oacute;n";
+      }
+
+      body.innerHTML = `
+        <div class="comsol-placeholder">
+          <div class="comsol-placeholder-inner">
+            <div class="comsol-placeholder-icon" aria-hidden="true"></div>
+            <p class="comsol-placeholder-status">Pendiente de exportaci&oacute;n</p>
+            <h3>Aqu&iacute; va ${resultado.placeholderName} del ${study.label}</h3>
+            <p>La estructura est&aacute; preparada para enlazar el asset exportado desde COMSOL cuando est&eacute; disponible en <strong>assets/comsol</strong>.</p>
+          </div>
+        </div>
+      `;
+    }
+
+    function comsolObtenerVisor() {
+      return document.getElementById("comsol-model-viewer");
+    }
+
+    function comsolObtenerOrientacionModelo() {
+      const roll = 0;
+      const pitch = comsolModeloRotacionVertical;
+      const yaw = comsolModeloRotacionHorizontal;
+
+      return `${roll}deg ${pitch}deg ${yaw}deg`;
+    }
+
+    function comsolObtenerOrbitaConDistanciaActual(visor, theta, phi, fallback) {
+      if (!visor || typeof visor.getCameraOrbit !== "function") return fallback;
+
+      const orbita = visor.getCameraOrbit();
+      if (!orbita || !Number.isFinite(orbita.radius) || orbita.radius <= 0) return fallback;
+      return `${theta}deg ${phi}deg ${orbita.radius}m`;
+    }
+
+    function comsolAplicarOrientacionModelo({ conservarCamara = true } = {}) {
+      const visor = comsolObtenerVisor();
+      if (!visor) return;
+
+      const orientacion = comsolObtenerOrientacionModelo();
+
+      visor.setAttribute("orientation", orientacion);
+      visor.orientation = orientacion;
+
+      comsolModelRotationActive = false;
+      if ("autoRotate" in visor) {
+        visor.autoRotate = false;
+      } else {
+        visor.removeAttribute("auto-rotate");
+      }
+      comsolActualizarBotonRotacion();
+
+      if (!conservarCamara) {
+        if (typeof visor.updateFraming === "function") visor.updateFraming();
+        if (typeof visor.jumpCameraToGoal === "function") visor.jumpCameraToGoal();
+      }
+    }
+
+    function comsolVolteretaVertical() {
+      comsolModeloRotacionVertical = (comsolModeloRotacionVertical + 90) % 360;
+      comsolAplicarOrientacionModelo({ conservarCamara: true });
+    }
+
+    function comsolVolteretaHorizontal() {
+      comsolModeloRotacionHorizontal = (comsolModeloRotacionHorizontal + 90) % 360;
+      comsolAplicarOrientacionModelo({ conservarCamara: true });
+    }
+
+    function comsolRestablecerOrientacionModelo() {
+      comsolModeloRotacionVertical = 0;
+      comsolModeloRotacionHorizontal = 0;
+      comsolAplicarOrientacionModelo({ conservarCamara: true });
+    }
+
+    function comsolReiniciarVista() {
+      const visor = comsolObtenerVisor();
+      if (!visor) return;
+      comsolModeloRotacionVertical = 0;
+      comsolModeloRotacionHorizontal = 0;
+      const orientacion = comsolObtenerOrientacionModelo();
+      visor.setAttribute("orientation", orientacion);
+      visor.orientation = orientacion;
+      visor.cameraOrbit = COMSOL_CAMERA_ORBIT_PREDETERMINADA;
+      visor.cameraTarget = COMSOL_CAMERA_TARGET_PREDETERMINADA;
+      visor.fieldOfView = COMSOL_FIELD_OF_VIEW_PREDETERMINADO;
+      if (typeof visor.jumpCameraToGoal === "function") visor.jumpCameraToGoal();
+    }
+
+    function comsolVistaSuperior() {
+      const visor = comsolObtenerVisor();
+      if (!visor) return;
+
+      visor.cameraOrbit = comsolObtenerOrbitaConDistanciaActual(
+        visor,
+        0,
+        8,
+        COMSOL_CAMERA_ORBIT_SUPERIOR
+      );
+      visor.cameraTarget = COMSOL_CAMERA_TARGET_PREDETERMINADA;
+      visor.fieldOfView = COMSOL_FIELD_OF_VIEW_SUPERIOR;
+      if (typeof visor.jumpCameraToGoal === "function") visor.jumpCameraToGoal();
+    }
+
+    function comsolVistaPilaDePie() {
+      const visor = comsolObtenerVisor();
+      if (!visor) return;
+
+      const orbitaSuperior = comsolObtenerOrbitaConDistanciaActual(
+        visor,
+        0,
+        8,
+        COMSOL_CAMERA_ORBIT_SUPERIOR
+      );
+
+      comsolModeloRotacionVertical = 90;
+      comsolModeloRotacionHorizontal = 0;
+      comsolAplicarOrientacionModelo({ conservarCamara: true });
+
+      visor.cameraOrbit = orbitaSuperior;
+      visor.cameraTarget = COMSOL_CAMERA_TARGET_PREDETERMINADA;
+      visor.fieldOfView = COMSOL_FIELD_OF_VIEW_SUPERIOR;
+      if (typeof visor.jumpCameraToGoal === "function") visor.jumpCameraToGoal();
+    }
+
+    function comsolAlternarRotacion() {
+      const visor = comsolObtenerVisor();
+      comsolModelRotationActive = !comsolModelRotationActive;
+      if (visor) visor.autoRotate = comsolModelRotationActive;
+      comsolActualizarBotonRotacion();
+    }
+
+    function comsolActualizarBotonRotacion() {
+      const boton = document.getElementById("comsol-rotation-button");
+      if (!boton) return;
+      boton.classList.toggle("comsol-rotation-active", comsolModelRotationActive);
+      boton.innerHTML = comsolModelRotationActive ? "Rotaci&oacute;n ON" : "Rotaci&oacute;n OFF";
+    }
+
+    async function comsolAlternarPantallaCompleta(targetId) {
+      const fallbackId = comsolEsCurvaImagen(comsolResultadoActivo) ? "comsol-polarization-stage" : "comsol-viewer-stage";
+      const target = document.getElementById(targetId || fallbackId);
+      if (!target) return;
+
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else if (target.requestFullscreen) await target.requestFullscreen();
+      } catch (error) {
+        console.warn("No se ha podido cambiar el modo de pantalla completa del visor COMSOL.", error);
+      }
+    }
+
+    function comsolActualizarBotonesPantallaCompleta() {
+      document.querySelectorAll(".comsol-fullscreen-button").forEach((boton) => {
+        boton.innerHTML = document.fullscreenElement ? "Salir pantalla completa" : "Pantalla completa";
+      });
+    }
+
+    function comsolInicializarPanelNavegacion() {
+      const contenedor = document.querySelector(".comsol-dashboard-grid");
+      const panel = document.getElementById("comsol-navigation-panel");
+      const trigger = document.querySelector(".comsol-navigation-trigger");
+      const cerrar = document.querySelector(".comsol-navigation-close");
+      if (!contenedor || !panel || !trigger || !cerrar) return;
+
+      let temporizadorCierre = null;
+
+      const establecerEstado = (abierto) => {
+        window.clearTimeout(temporizadorCierre);
+        contenedor.classList.toggle("comsol-nav-open", abierto);
+        trigger.setAttribute("aria-expanded", String(abierto));
+        panel.setAttribute("aria-hidden", String(!abierto));
+        panel.inert = !abierto;
+      };
+
+      const abrirPanel = () => establecerEstado(true);
+      const programarCierre = () => {
+        window.clearTimeout(temporizadorCierre);
+        temporizadorCierre = window.setTimeout(() => establecerEstado(false), 200);
+      };
+
+      if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+        [trigger, panel].forEach((elemento) => {
+          elemento.addEventListener("mouseenter", abrirPanel);
+          elemento.addEventListener("mouseleave", programarCierre);
+        });
+      }
+
+      trigger.addEventListener("click", () => {
+        establecerEstado(!contenedor.classList.contains("comsol-nav-open"));
+      });
+
+      cerrar.addEventListener("click", () => {
+        establecerEstado(false);
+        trigger.focus();
+      });
+
+      panel.addEventListener("keydown", (evento) => {
+        if (evento.key === "Escape") {
+          establecerEstado(false);
+          trigger.focus();
+        }
+      });
+
+      document.addEventListener("pointerdown", (evento) => {
+        if (!contenedor.classList.contains("comsol-nav-open")) return;
+        if (panel.contains(evento.target) || trigger.contains(evento.target)) return;
+        establecerEstado(false);
+      });
+    }
+
+    function comsolInicializarDashboard() {
+      mostrarSeccionTFG("sofc");
+      comsolInicializarPanelNavegacion();
+      comsolRenderizarDashboard();
+      document.addEventListener("fullscreenchange", comsolActualizarBotonesPantallaCompleta);
+    }
+
+    window.addEventListener("DOMContentLoaded", comsolInicializarDashboard);
+  </script>
+</body>
+</html>
