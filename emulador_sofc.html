@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Emulador SOFC con Red Neuronal y Modo Fijo</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+
+  <script src="./inverse_model_inverso_nuevo.js"></script>
+  <script src="./sigma_model_log_spline_nuevo.js"></script>
+
+  <style>
+
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #ffffff; margin: 0; padding: 18px; text-align: center; }
+    h1 { color: #00d2ff; margin-bottom: 14px; }
+    .dashboard { max-width: 1500px; margin: auto; }
+    .card { background: #1e1e1e; padding: 18px; border-radius: 12px; margin-bottom: 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.45); }
+
+    .tfg-sofc-header {
+      position: relative;
+      overflow: hidden;
+      margin: 22px 0 18px;
+      border: 1px solid rgba(210, 136, 240, 0.42);
+      border-radius: 12px;
+      background:
+        radial-gradient(circle at 50% 0%, rgba(210, 136, 240, 0.2), transparent 58%),
+        linear-gradient(135deg, rgba(31, 13, 43, 0.98), rgba(75, 28, 94, 0.96));
+      box-shadow: 0 18px 50px rgba(0,0,0,0.38), 0 0 26px rgba(142, 68, 173, 0.15);
+      text-align: center;
+    }
+
+    .tfg-sofc-header::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 3px;
+      background: linear-gradient(90deg, #8e44ad, #d288f0, #b96ad9);
+      box-shadow: 0 0 14px rgba(210, 136, 240, 0.5);
+    }
+
+    .tfg-sofc-header h1 {
+      margin: 0;
+      padding: 25px 28px 7px;
+      color: #ffffff;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      letter-spacing: 0;
+      text-shadow: 0 0 18px rgba(210, 136, 240, 0.24);
+    }
+
+    .tfg-sofc-header > .comsol-student-credit {
+      display: flex;
+      width: max-content;
+      margin: 0 auto 10px;
+      text-shadow: 0 1px 2px #000000;
+    }
+
+    .sofc-connection-panel {
+      padding: 14px 18px 20px;
+      border-top: 0;
+      background: transparent;
+    }
+
+    .sofc-connection-panel,
+    .sofc-connection-panel button,
+    .sofc-connection-panel p,
+    .sofc-connection-panel p span {
+      -webkit-text-stroke: 0.35px #000000;
+      text-shadow:
+        -1px -1px 0 #000000,
+        1px -1px 0 #000000,
+        -1px 1px 0 #000000,
+        1px 1px 0 #000000;
+    }
+
+    .sofc-connection-panel p { margin: 10px 0 0; }
+    .sofc-connection-panel #btnConectar { background: linear-gradient(135deg, #8e44ad, #b96ad9); }
+    .sofc-connection-panel #btnConectar:not(:disabled):hover { background: linear-gradient(135deg, #7d3c98, #a956c8); }
+    .sofc-connection-panel #btnDesconectar:disabled {
+      border: 1px solid rgba(255,255,255,0.18);
+      background: #56505a !important;
+      color: #f4eef7 !important;
+      opacity: 1;
+    }
+
+    .grid-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .caja-valor { background: #2a2a2a; padding: 14px; border-radius: 8px; border-left: 5px solid #00d2ff; transition: all 0.3s ease; }
+    .caja-valor span { display: block; font-size: 1.7em; font-weight: bold; color: #4CAF50; margin-top: 8px; }
+    .caja-ia { border-left-color: #8e44ad; } .caja-ia span { color: #d288f0; }
+
+    .alarma-activa { background: #420b0b !important; border: 2px solid #ff5252 !important; animation: parpadeo 1s infinite; }
+    .input-error { background-color: #420b0b !important; color: white !important; border-color: #ff5252 !important; }
+    @keyframes parpadeo { 0% { opacity: 1; } 50% { opacity: 0.8; } 100% { opacity: 1; } }
+
+    button { 
+        background: #007bff; color: white; border: none; padding: 10px 18px; 
+        font-size: 0.98em; border-radius: 6px; cursor: pointer; margin: 4px; font-weight: 600; 
+        transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    button:disabled { background: #444 !important; color: #888 !important; cursor: not-allowed; box-shadow: none; transform: none !important; }
+    button:not(:disabled):hover { background: #0056b3; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+    button:not(:disabled):active { transform: translateY(1px); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+
+    .btn-verde { background: #28a745; } .btn-verde:not(:disabled):hover { background: #218838; }
+    .btn-rojo { background: #dc3545; } .btn-rojo:not(:disabled):hover { background: #c82333; }
+    .btn-info { background: #8e44ad; } .btn-info:not(:disabled):hover { background: #732d91; }
+    .btn-registro { background: #f39c12; padding: 12px; width: 100%; margin-top: 10px; font-size: 1.1em; border-radius: 8px; }
+    .btn-registro:not(:disabled):hover { background: #e67e22; }
+
+    .layout-main { display: grid; grid-template-columns: 380px 1fr; gap: 18px; align-items: stretch; margin-bottom: 18px; }
+    .columna-izquierda { display: flex; flex-direction: column; gap: 18px; }
+    .columna-derecha { display: flex; flex-direction: column; gap: 18px; }
+
+    .panel-parametros { 
+        text-align: left; border: 2px solid #8e44ad; box-sizing: border-box; transition: all 0.3s ease;
+        display: flex; flex-direction: column; justify-content: space-between; flex-grow: 1;
+        margin-bottom: 0;
+    }
+    .panel-exportar { display: flex; flex-direction: column; justify-content: center; margin-bottom: 0; text-align: left;}
+
+    .param-block { background: #252525; border-radius: 10px; padding: 14px; margin-bottom: 12px; } 
+    .param-title { font-size: 0.95em; color: #cdb5d7; margin-bottom: 8px; font-weight: 600; }
+    .param-minmax { display: flex; justify-content: space-between; font-size: 0.78em; color: #cdb5d7; margin-bottom: 6px; }
+    .param-minmax > span { white-space: nowrap; }
+    .minmax-unit { color: #cdb5d7; }
+    .param-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+
+    input[type="range"] {
+      width: 100%;
+      height: 24px;
+      margin: 0;
+      background: transparent;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 6px;
+      border: 1px solid rgba(210, 136, 240, 0.4);
+      border-radius: 999px;
+      background: linear-gradient(90deg, #3b2941, #64406f);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.55);
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      width: 18px;
+      height: 18px;
+      margin-top: -7px;
+      border: 2px solid #efd5f9;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #d288f0, #8e44ad);
+      box-shadow: 0 2px 7px rgba(0,0,0,0.48), 0 0 8px rgba(210, 136, 240, 0.28);
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-moz-range-track {
+      height: 6px;
+      border: 1px solid rgba(210, 136, 240, 0.4);
+      border-radius: 999px;
+      background: linear-gradient(90deg, #3b2941, #64406f);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.55);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 15px;
+      height: 15px;
+      border: 2px solid #efd5f9;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #d288f0, #8e44ad);
+      box-shadow: 0 2px 7px rgba(0,0,0,0.48), 0 0 8px rgba(210, 136, 240, 0.28);
+    }
+
+    input[type="range"]:focus-visible {
+      outline: 2px solid rgba(210, 136, 240, 0.75);
+      outline-offset: 2px;
+      border-radius: 999px;
+    }
+
+    input[type="number"] { width: 100%; padding: 7px 4px; font-size: 0.88em; text-align: center; border-radius: 6px; border: 1px solid #444; background: #333; color: white; box-sizing: border-box; font-weight: bold; transition: all 0.3s ease;}
+    .input-unit-wrapper { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
+    .input-unit-wrapper input[type="number"] { flex: 0 0 112px; width: 112px; }
+    .input-unit-wrapper[data-display] input[type="number"] { color: transparent; caret-color: #ffffff; }
+    .input-unit-wrapper[data-display]::before {
+      content: attr(data-display);
+      position: absolute;
+      left: 0;
+      top: 50%;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 112px;
+      padding: 0 4px;
+      box-sizing: border-box;
+      color: #ffffff;
+      font-size: 0.88em;
+      font-weight: 700;
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+    .input-unit-wrapper:focus-within::before { display: none; }
+    .input-unit-wrapper:focus-within input[type="number"] { color: #ffffff; }
+    .unit-box { flex: 0 0 auto; font-size: 0.8em; color: #cdb5d7; margin: 0; text-align: left; white-space: nowrap; }
+
+    .sigma-box { background: linear-gradient(135deg, #2b1144, #4e1d63); border: 1px solid #a92ad6; border-radius: 10px; padding: 16px; margin-bottom: 12px; text-align: left; }
+    .sigma-box h4 { margin: 0 0 8px 0; color: #e47eff; font-size: 1em; }
+    .sigma-box .sigma-value { font-size: 1.35em; font-weight: bold; color: #ffffff; margin-bottom: 4px; }
+    .sigma-box .sigma-desc { font-size: 0.82em; color: #ecd7f4; }
+
+    .estado-container { display: flex; justify-content: space-around; align-items: center; background: #161616; padding: 15px; border-radius: 10px; border: 1px solid #333; margin-bottom: 18px;}
+    .step-pill { padding: 8px 18px; border-radius: 20px; background: #2a2a2a; color: #555; font-weight: bold; font-size: 0.9em; border: 2px solid #444; transition: 0.4s; }
+    .step-active { background: #00d2ff; color: #000; border-color: #00a8cc; box-shadow: 0 0 10px rgba(0,210,255,0.3); transform: scale(1.02); }
+
+    .panel-curvas { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .panel-resistencias { grid-column: span 2; }
+
+    .contenedor-grafico { position: relative; width: 100%; height: 320px; }
+    .contenedor-grafico-ia { position: relative; width: 100%; height: 450px; }
+    .contenedor-grafico-resistencia { position: relative; width: 100%; height: 200px; }
+    .contenedor-historico { position: relative; width: 100%; height: 750px; }
+
+    canvas { background: #1e1e1e; border-radius: 8px; width: 100% !important; height: 100% !important; }
+
+    .panel-modo-mejorado { background: #1e1e1e; border: 2px solid #444; text-align: left; transition: all 0.3s ease; }
+    .modos-wrapper { display: flex; gap: 15px; margin-bottom: 15px; }
+    .radio-modo { flex: 1; position: relative; cursor: pointer; }
+    .radio-modo input { position: absolute; opacity: 0; cursor: pointer; height: 0; width: 0; }
+    .radio-modo span { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 15px; background: #252525; border: 2px solid #333; border-radius: 8px; font-weight: bold; font-size: 1.1em; color: #888; transition: all 0.2s ease; }
+
+    .radio-modo.ia input:checked ~ span { background: rgba(142, 68, 173, 0.15); border-color: #d288f0; color: #d288f0; }
+    .radio-modo.fijo input:checked ~ span { background: rgba(76, 175, 80, 0.15); border-color: #4CAF50; color: #4CAF50; }
+
+    .box-fijo-animado { display: none; background: #252525; padding: 15px; border-radius: 10px; border-left: 5px solid #4CAF50; animation: slideDown 0.3s ease-out; }
+    .box-fijo-animado .param-row { grid-template-columns: minmax(0, 1fr) auto 120px; }
+    #panelVoltajeFijo .param-title,
+    #panelVoltajeFijo .param-minmax,
+    #panelVoltajeFijo .unit-box { color: #4CAF50; }
+    #panelVoltajeFijo input[type="range"]::-webkit-slider-runnable-track {
+      border-color: rgba(76, 175, 80, 0.72);
+      background: linear-gradient(90deg, #244a2d, #4CAF50);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.55), 0 0 8px rgba(76, 175, 80, 0.18);
+    }
+    #panelVoltajeFijo input[type="range"]::-webkit-slider-thumb {
+      border-color: #d7f5da;
+      background: linear-gradient(135deg, #75d37b, #2e8b3c);
+      box-shadow: 0 2px 7px rgba(0,0,0,0.48), 0 0 9px rgba(76, 175, 80, 0.35);
+    }
+    #panelVoltajeFijo input[type="range"]::-moz-range-track {
+      border-color: rgba(76, 175, 80, 0.72);
+      background: linear-gradient(90deg, #244a2d, #4CAF50);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.55), 0 0 8px rgba(76, 175, 80, 0.18);
+    }
+    #panelVoltajeFijo input[type="range"]::-moz-range-thumb {
+      border-color: #d7f5da;
+      background: linear-gradient(135deg, #75d37b, #2e8b3c);
+      box-shadow: 0 2px 7px rgba(0,0,0,0.48), 0 0 9px rgba(76, 175, 80, 0.35);
+    }
+    #panelVoltajeFijo input[type="range"]:focus-visible {
+      outline-color: rgba(76, 175, 80, 0.85);
+    }
+    @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+    .formula-inline { color: #ff8a65; font-weight: 700; white-space: nowrap; }
+
+    .panel-tiempo-real { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+
+    .botones-accion { display: flex; flex-direction: column; gap: 8px; }
+    .botones-accion button { width: 100% !important; box-sizing: border-box; margin: 0; padding: 10px; }
+
+    #monitorSerie { width: 100%; height: 200px; background: #000; color: #0f0; font-family: 'Courier New', Courier, monospace; overflow-y: scroll; padding: 10px; border-radius: 8px; border: 1px solid #444; box-sizing: border-box; text-align: left; font-size: 0.9em; line-height: 1.4; }
+
+    .btn-apagado {
+        background: #b00020;
+        color: white;
+        border: 2px solid #ff5252;
+        font-size: 1.05em;
+        padding: 12px;
+        border-radius: 8px;
+        font-weight: bold;
+        width: 100%;
+        margin-top: 8px;
+    }
+
+    .btn-apagado:not(:disabled):hover {
+        background: #7a0015;
+    }
+
+    .btn-start {
+        background: #28a745;
+        color: white;
+        border: 2px solid #4CAF50;
+        font-size: 1.05em;
+        padding: 12px;
+        border-radius: 8px;
+        font-weight: bold;
+        width: 100%;
+        margin-top: 8px;
+    }
+
+    .btn-start:not(:disabled):hover {
+        background: #218838;
+    }
+
+    .modo-seguro-activo {
+        background: #420b0b !important;
+        border-color: #ff5252 !important;
+        box-shadow: 0 0 18px rgba(255, 82, 82, 0.45);
+    }
+
+    @media (max-width: 1100px) { 
+      .layout-main, .panel-curvas, .panel-tiempo-real { grid-template-columns: 1fr; } 
+      .modos-wrapper { flex-direction: column; }
+      .panel-resistencias { grid-column: span 1; }
+    }
+
+    @media (max-width: 600px) {
+      .tfg-sofc-header h1 { padding: 22px 18px 16px; }
+      .box-fijo-animado .param-row { grid-template-columns: 1fr; }
+      .box-fijo-animado .input-unit-wrapper { justify-self: end; }
+    }
+
+    .comsol-student-credit {
+      display: inline-flex;
+      margin-top: 14px;
+      padding: 7px 11px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      font-size: 0.86em;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+  </style>
+</head>
+<body>
+  <section id="seccion-sofc">
+  <div class="dashboard">
+    <header class="tfg-sofc-header">
+      <h1>Emulador SOFC</h1>
+      <span class="comsol-student-credit">Carla Calder&oacute;n Fernand&eacute;z</span>
+      <div class="sofc-connection-panel">
+        <button id="btnConectar" onclick="conectarBluetooth()"> Conectar Bluetooth</button>
+        <button id="btnDesconectar" class="btn-rojo" onclick="desconectarBluetooth()" disabled> Desconectar</button>
+        <p>Estado: <span id="estado" style="color:#ce3141; font-weight:bold;">🔴 Desconectado</span> | Sesión: <span id="cronometro" style="color:#00d2ff; font-weight:bold;">00:00:00</span></p>
+      </div>
+    </header>
+
+    <div class="estado-container">
+        <div id="stepMidiendo" class="step-pill">1. LECTURA SENSOR (I)</div>
+        <div style="color: #444; font-size: 1.5em;">➔</div>
+        <div id="stepCalculando" class="step-pill">2. CÁLCULO IA / SET</div>
+        <div style="color: #444; font-size: 1.5em;">➔</div>
+        <div id="stepEstabilizando" class="step-pill">3. AJUSTE BUCK (PWM)</div>
+    </div>
+
+    <div class="grid-top">
+      <div class="caja-valor" id="cajaVout">Voltaje Real<span id="lblVout">0,000 V</span></div>
+      <div class="caja-valor">Corriente Real<span id="lblIout">0,000 A</span></div>
+      <div class="caja-valor">Potencia Real<span id="lblPotencia" style="color:#ffc107;">0,000 W</span></div>
+      <div class="caja-valor caja-ia" id="cajaObjetivo">Voltaje Objetivo<span id="lblVobj">0,000 V</span></div>
+      <div class="caja-valor">Señal PWM<span id="lblPWM" style="color:#ff9800;">0</span></div>
+    </div>
+
+    <div class="layout-main">
+      <div class="columna-izquierda">
+          <div class="card panel-parametros" id="panelParamsIA">
+            <h3 style="text-align:center; margin-top:0; color: #d288f0;">Parámetros Red Neuronal</h3>
+
+            <div class="sigma-box">
+              <h4>Conductividad Recomendada</h4>
+              <div class="sigma-value" id="lblSigmaRecomendada">σ_obj = Calculando...</div>
+              <div class="sigma-desc" id="lblSigmaRango">Rango: [--, --] S/m</div>
+            </div>
+
+            <div class="param-block">
+              <div class="param-title">Temperatura</div>
+              <div class="param-minmax"><span>690 °C</span><span>860 °C</span></div>
+              <div class="param-row">
+                <input type="range" id="sliderTemp" min="690" max="860" step="0.1" value="715">
+                <div class="input-unit-wrapper"><input type="number" id="inputTemp" min="690" max="860" step="0.1" value="715.0"><div class="unit-box">°C</div></div>
+              </div>
+            </div>
+
+            <div class="param-block">
+              <div class="param-title">Caudal de H₂</div>
+              <div class="param-minmax"><span>6,12e-11 <span class="minmax-unit">kg/s</span></span><span>8,16e-10 <span class="minmax-unit">kg/s</span></span></div>
+              <div class="param-row">
+                <input type="range" id="slidermH2" min="6.126288e-11" max="8.160303e-10" step="1e-12" value="2.5e-10">
+                <div class="input-unit-wrapper"><input type="number" id="inputmH2" min="6.126288e-11" max="8.160303e-10" step="1e-12" value="2.5e-10"><div class="unit-box">kg/s</div></div>
+              </div>
+            </div>
+
+            <div class="param-block">
+              <div class="param-title">Conductividad Ajustada</div>
+              <div class="param-minmax"><span><span id="sigmaMinLabel">0,00</span> <span class="minmax-unit">S/m</span></span><span><span id="sigmaMaxLabel">0,00</span> <span class="minmax-unit">S/m</span></span></div>
+              <div class="param-row">
+                <input type="range" id="sliderSigma" step="0.001">
+                <div class="input-unit-wrapper"><input type="number" id="inputSigmaObj" step="0.001"><div class="unit-box">S/m</div></div>
+              </div>
+            </div>
+
+            <button class="btn-info" onclick="enviarParametrosESP32()" id="btnEnviarParams" disabled style="width: 100%; margin: 10px 0 0 0; font-size: 1.1em; padding: 12px;"> Transmitir IA a ESP32</button>
+          </div>
+
+          <div class="card panel-exportar">
+              <h3 style="margin-top:0; margin-bottom: 12px; font-size: 1.1em; color: #fff;">Exportar Datos</h3>
+              <div class="botones-accion">
+                  <button class="btn-verde" onclick="descargarPNG('graficaHistorica', 'historico.png')"> Descargar Histórico (PNG)</button>
+                  <button class="btn-verde" onclick="descargarPNG('graficaCurvaIA', 'curva_polarizacion.png')"> Descargar Curva IA (PNG)</button>
+                  <button class="btn-verde" onclick="descargarPuntosCSV()"> Descargar Puntos Experimentales (CSV)</button>
+              </div>
+          </div>
+      </div>
+
+      <div class="columna-derecha">
+        <div class="panel-curvas">
+          <div class="card" style="margin-bottom:0;">
+            <h3 style="color: #d288f0; margin-top:0;">Curva Polarización IA</h3>
+            <div class="contenedor-grafico-ia"><canvas id="graficaCurvaIA"></canvas></div>
+            <button class="btn-registro" onclick="registrarPuntoCurva()">📍 REGISTRAR PUNTO EXPERIMENTAL</button>
+          </div>
+          <div class="card" style="margin-bottom:0;">
+            <h3 style="color: #d288f0; margin-top:0;">Curva Potencia IA</h3>
+            <div class="contenedor-grafico-ia"><canvas id="graficaPotenciaIA"></canvas></div>
+          </div>
+          <div class="card panel-resistencias" style="margin-bottom:0;">
+            <h3 style="color: #ff5722; margin-top:0; font-size: 1.1em;">Resistencia de carga dinámica (<span class="formula-inline">R = V/I</span>)</h3>
+            <div class="contenedor-grafico-resistencia"><canvas id="graficaResistencia"></canvas></div>
+          </div>
+        </div>
+
+        <div class="card panel-modo-mejorado" id="panelModoGlobal">
+          <h3 style="margin-top:0; color: #fff;">Modo de Operación</h3>
+          <div class="modos-wrapper">
+            <label class="radio-modo ia">
+              <input type="radio" name="modo_control" value="0" onchange="cambiarModoInterfaz()">
+              <span>Modo Red Neuronal</span>
+            </label>
+            <label class="radio-modo fijo">
+              <input type="radio" name="modo_control" value="1" checked onchange="cambiarModoInterfaz()">
+              <span>Modo Voltaje Fijo</span>
+            </label>
+          </div>
+          <div id="panelVoltajeFijo" class="box-fijo-animado">
+            <div class="param-title">Ajuste de Voltaje Objetivo</div>
+            <div class="param-minmax"><span>0,00 V</span><span>1,20 V</span></div>
+            <div class="param-row">
+              <input type="range" id="sliderVoltajeFijo" min="0.00" max="1.20" step="0.01" value="0.60">
+              <div class="input-unit-wrapper"><input type="number" id="inputVoltajeFijo" min="0.00" max="1.20" step="0.01" value="0.60"><div class="unit-box">V</div></div>
+              <button class="btn-verde" onclick="enviarParametrosESP32()" id="btnAplicarFijo" disabled style="height: 100%; margin:0; font-size: 1.1em;">Aplicar</button>
+            </div>
+          </div>
+
+          <div style="margin-top: 16px;">
+            <button class="btn-apagado" onclick="activarApagadoSeguroWeb()" id="btnApagadoSeguro" disabled>APAGADO SEGURO / CAMBIAR CARGA</button>
+            <button class="btn-start" onclick="reanudarSistemaWeb()" id="btnStartSeguro" disabled>START / REANUDAR CON RAMPA</button>
+          </div>
+        </div>
+      </div>
+    </div> 
+
+    <div class="panel-tiempo-real">
+      <div class="card"><h3>Voltaje y Corriente (40s)</h3><div class="contenedor-grafico"><canvas id="graficaDatos"></canvas></div></div>
+      <div class="card"><h3>Potencia (40s)</h3><div class="contenedor-grafico"><canvas id="graficaPotencia"></canvas></div></div>
+    </div>
+
+    <div class="card">
+      <h3 id="tituloHistorico">Histórico Acumulado</h3>
+      <div class="contenedor-historico"><canvas id="graficaHistorica"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h3>Monitor Serie BLUETOOTH <button class="btn-verde" onclick="descargarCSV()" style="font-size:0.8em; padding:6px 12px; float:right; margin-top:-5px;">📥 Exportar Histórico (Excel)</button></h3>
+      <div id="monitorSerie">Esperando datos...<br></div>
+    </div>
+  </div>
+  </section>
+
+  <script>
+const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"; const RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; const TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+    const AREA_ACTIVA_M2 = 0.001; let device, rxCharacteristic, tiempoInicio = 0, intervaloCronometro = null;
+    let datosCSV = "Hora,Tiempo(s),V_real(V),I_real(A),V_obj(V),PWM,Potencia(W),Modo\n";
+    let puntosExperimentales = []; 
+    let apagadoSeguroWebActivo = false;
+    let ultimoModoAntesOFF = "1";
+
+    let cicloPasoVisual = 0;
+    let intervaloAnimacionPasos = null;
+    let bufferActualizacionPendiente = false;
+
+    function cambiarModoInterfaz() {
+      let modo = document.querySelector('input[name="modo_control"]:checked').value;
+      let panelFijo = document.getElementById("panelVoltajeFijo");
+      let cajaObj = document.getElementById("cajaObjetivo");
+      let panelParamsIA = document.getElementById("panelParamsIA");
+      let btnEnviarParams = document.getElementById("btnEnviarParams");
+
+      let nombreModo = modo === "0" ? "Red Neuronal (IA)" : "Voltaje Fijo";
+      escribirConsola(`<span style="color: #ffc107;"><b> Modo cambiado a: ${nombreModo}</b></span>`);
+
+      if (modo === "0") {
+        panelFijo.style.display = "none";
+        cajaObj.style.borderLeftColor = "#8e44ad"; 
+        cajaObj.querySelector("span").style.color = "#d288f0";
+        panelParamsIA.style.borderColor = "#8e44ad";
+        panelParamsIA.style.opacity = "1";
+        if (device && device.gatt.connected && !apagadoSeguroWebActivo) { btnEnviarParams.disabled = false; }
+      } else {
+        panelFijo.style.display = "block";
+        cajaObj.style.borderLeftColor = "#4CAF50"; 
+        cajaObj.querySelector("span").style.color = "#4CAF50";
+        panelParamsIA.style.borderColor = "#444";
+        panelParamsIA.style.opacity = "0.7"; 
+        btnEnviarParams.disabled = true; 
+      }
+      
+      panelParamsIA.style.pointerEvents = "auto"; 
+      enviarParametrosESP32(); 
+    }
+
+    function actualizarInterfazEstado(estado) {
+        document.getElementById('stepMidiendo').className = 'step-pill';
+        document.getElementById('stepCalculando').className = 'step-pill';
+        document.getElementById('stepEstabilizando').className = 'step-pill';
+
+        if (estado === 0) document.getElementById('stepMidiendo').classList.add('step-active');
+        if (estado === 1) document.getElementById('stepCalculando').classList.add('step-active');
+        if (estado === 2) document.getElementById('stepEstabilizando').classList.add('step-active');
+    }
+
+    function gestionarAnimacionPasos() {
+        if (intervaloAnimacionPasos) clearInterval(intervaloAnimacionPasos);
+
+        intervaloAnimacionPasos = setInterval(() => {
+            if (device && device.gatt.connected) {
+                let modo = document.querySelector('input[name="modo_control"]:checked').value;
+                if (modo === "0") {
+                    cicloPasoVisual = (cicloPasoVisual + 1) % 3;
+                    actualizarInterfazEstado(cicloPasoVisual);
+                } else {
+                    actualizarInterfazEstado(2);
+                }
+            } else {
+                actualizarInterfazEstado(-1);
+            }
+        }, 500);
+    }
+
+    function formatearDecimalVisual(valor) {
+      return String(valor).replace(/(\d)\.(\d)/g, "$1,$2");
+    }
+
+    function formatearFijoVisual(valor, decimales) {
+      return Number(valor).toFixed(decimales).replace(".", ",");
+    }
+
+    function formatearExponencialVisual(valor, decimales) {
+      return Number(valor).toExponential(decimales).replace(".", ",");
+    }
+
+    function leerNumeroVisual(valor) {
+      return parseFloat(String(valor).replace(",", "."));
+    }
+
+    function actualizarInputVisual(input) {
+      const wrapper = input.closest(".input-unit-wrapper");
+      if (wrapper) wrapper.dataset.display = formatearDecimalVisual(input.value);
+    }
+
+    function registrarPuntoCurva() {
+        let v = leerNumeroVisual(document.getElementById('lblVout').innerText);
+        let i = leerNumeroVisual(document.getElementById('lblIout').innerText);
+
+        if (i >= 0 && !isNaN(i) && !isNaN(v)) {
+            puntosExperimentales.push({ x: i, y: v });
+            graficaCurvaIA.update();
+            escribirConsola(`<span style="color: #00d2ff;"><b>📍 Punto Experimental Guardado: ${formatearFijoVisual(v, 3)}V @ ${formatearFijoVisual(i, 3)}A</b></span>`);
+        }
+    }
+
+    // EL TRUCO MAGNÍFICO DEL HOVER (INTERSECT: FALSE) PARA DEVOLVER EL TOOLTIP
+    const cfgComun = { 
+        responsive: true, 
+        maintainAspectRatio: false, 
+        animation: false,
+        interaction: { mode: 'index', intersect: false }, 
+        plugins: { tooltip: { enabled: true } }
+    };
+
+    const graficaCurvaIA = new Chart(document.getElementById('graficaCurvaIA').getContext('2d'), { 
+      type: 'line', 
+      data: { 
+        datasets: [
+          { label: 'Modelo Teórico (IA)', borderColor: '#d288f0', backgroundColor: 'rgba(210, 136, 240, 0.1)', fill: true, data: [], tension: 0.2, pointRadius: 0, order: 3 },
+          { label: 'Punto Actual (Vivo)', backgroundColor: '#ffeb3b', data: [], pointRadius: 8, type: 'scatter', order: 1 },
+          { label: 'Experimentales', backgroundColor: '#00d2ff', borderColor: '#00d2ff', data: puntosExperimentales, pointRadius: 6, showLine: false, type: 'scatter', order: 2 }
+        ]
+      }, 
+      options: { ...cfgComun, scales: { x: { type: 'linear', title: { display: true, text: 'Corriente (A)' } }, y: { title: { display: true, text: 'Voltaje (V)' }, min: 0.6 } } } 
+    });
+
+    const graficaPotenciaIA = new Chart(document.getElementById('graficaPotenciaIA').getContext('2d'), { 
+      type: 'line', 
+      data: { 
+        datasets: [
+          { label: 'Potencia (W)', borderColor: '#ffc107', backgroundColor: 'rgba(255, 193, 7, 0.1)', fill: true, data: [], tension: 0.2, order: 2, pointRadius: 0 },
+          { label: 'Máx. Potencia (MPPT)', backgroundColor: '#ff5252', data: [], pointRadius: 8, type: 'scatter', order: 1 }
+        ]
+      }, 
+      options: { ...cfgComun, scales: { x: { type: 'linear', title: { display: true, text: 'Corriente (A)' } }, y: { title: { display: true, text: 'Potencia (W)' } } } } 
+    });
+
+    const graficaDatos = new Chart(document.getElementById('graficaDatos').getContext('2d'), { type: 'line', data: { labels: [], datasets: [{ label: 'Voltaje Real (V)', borderColor: '#4CAF50', data: [], yAxisID: 'y', tension: 0.2, pointRadius: 0 }, { label: 'Corriente Real (A)', borderColor: '#00d2ff', data: [], yAxisID: 'y1', tension: 0.2, pointRadius: 0 }, { label: 'Voltaje Obj (V)', borderColor: '#ffffff', data: [], yAxisID: 'y', tension: 0.2, borderDash: [5, 5], pointRadius: 0 }]}, options: { ...cfgComun, scales: { x: { title: { display: true, text: 'Segundos' } }, y: { position: 'left' }, y1: { position: 'right', grid: { drawOnChartArea: false } } } } });
+
+    const graficaPotencia = new Chart(document.getElementById('graficaPotencia').getContext('2d'), { type: 'line', data: { labels: [], datasets: [{ label: 'Potencia Real (W)', borderColor: '#ffc107', fill: true, backgroundColor: 'rgba(255,193,7,0.15)', data: [], tension: 0.2, pointRadius: 0 }]}, options: { ...cfgComun, scales: { x: { title: { display: true, text: 'Segundos' } }, y: { beginAtZero: true } } } });
+
+    const graficaResistencia = new Chart(document.getElementById('graficaResistencia').getContext('2d'), {
+        type: 'line',
+        data: { labels: [], datasets: [{ label: 'Resistencia (Ω)', borderColor: '#ff5722', backgroundColor: 'rgba(255,87,34,0.2)', fill: true, data: [], tension: 0.2, pointRadius: 0 }] },
+        options: { 
+            ...cfgComun, 
+            scales: { 
+                x: { title: { display: true, text: 'Segundos' } }, 
+                y: { type: 'linear', title: { display: true, text: 'Ohmios (Ω)' }, beginAtZero: false } 
+            } 
+        }
+    });
+
+    const graficaHistorica = new Chart(document.getElementById('graficaHistorica').getContext('2d'), { 
+      type: 'line', 
+      data: { labels: [], datasets: [
+          { label: 'Voltaje Real (V)', borderColor: '#4CAF50', data: [], yAxisID: 'y', tension: 0.2, pointRadius: 0, borderWidth: 2, pointHitRadius: 10 }, 
+          { label: 'Corriente Real (A)', borderColor: '#00d2ff', data: [], yAxisID: 'y1', tension: 0.2, pointRadius: 0, borderWidth: 2, pointHitRadius: 10 },
+          { label: 'Voltaje Objetivo', borderColor: 'rgba(255,255,255,0.8)', backgroundColor: '#ffffff', borderDash: [5, 5], data: [], yAxisID: 'y', pointRadius: 0, borderWidth: 2, pointHitRadius: 10 } 
+      ]}, 
+      options: { 
+        ...cfgComun, 
+        plugins: {
+            tooltip: { enabled: true },
+            zoom: {
+                // EL ZOOM Y PANEO AHORA ESTÁN SIEMPRE ACTIVOS
+                zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+                pan: { enabled: true, mode: 'x' }
+            }
+        },
+        scales: { 
+          x: { title: { display: true, text: 'Tiempo Transcurrido (s)' } }, 
+          y: { position: 'left', beginAtZero: true, title: { display: true, text: 'Voltaje (V)' } }, 
+          y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: 'Corriente (A)' } } 
+        } 
+      } 
+    });
+
+    function sigmaModelAvailable() { 
+      return window.SIGMA_MODEL_LOG_SPLINE_NUEVO && typeof window.calcularRangoSigmaLogSplineNuevo === "function"; 
+    }
+
+    function calcularConductividad() {
+      let T = parseFloat(document.getElementById("inputTemp").value);
+      if (!sigmaModelAvailable()) {
+        escribirConsola(`<span style="color:#ff5252;"><b>⚠ No se ha cargado sigma_model_log_spline_nuevo.js</b></span>`);
+        return;
+      }
+      const rango = window.calcularRangoSigmaLogSplineNuevo(T);
+      const sigmaObj = rango.sigma_obj;
+      const sigmaMin = rango.sigma_min;
+      const sigmaMax = rango.sigma_max;
+
+      document.getElementById("lblSigmaRecomendada").innerText = `σ_obj = ${formatearExponencialVisual(sigmaObj, 4)} S/m`;
+      document.getElementById("lblSigmaRango").innerText = `Rango: [${formatearExponencialVisual(sigmaMin, 4)}, ${formatearExponencialVisual(sigmaMax, 4)}] S/m`;
+
+      const slider = document.getElementById("sliderSigma");
+      slider.min = sigmaMin; slider.max = sigmaMax; slider.step = (sigmaMax - sigmaMin) / 100; slider.value = sigmaObj;
+
+      document.getElementById("inputSigmaObj").value = sigmaObj.toFixed(3);
+      actualizarInputVisual(document.getElementById("inputSigmaObj"));
+      document.getElementById("sigmaMinLabel").innerText = formatearFijoVisual(sigmaMin, 3);
+      document.getElementById("sigmaMaxLabel").innerText = formatearFijoVisual(sigmaMax, 3);
+
+      generarCurvaIA();
+    }
+
+    function activarNN(x, activation) {
+      const act = String(activation || "").toLowerCase();
+      if (act === "elu") return x > 0 ? x : Math.exp(x) - 1.0;
+      if (act === "gelu") return 0.5 * x * (1.0 + Math.tanh(Math.sqrt(2.0 / Math.PI) * (x + 0.044715 * Math.pow(x, 3))));
+      if (act === "tanh") return Math.tanh(x);
+      if (act === "relu") return Math.max(0.0, x);
+      return x;
+    }
+
+    function denseForward(inputVector, layer) {
+      const W = layer.W; const b = layer.b; const out = [];
+      for (let i = 0; i < b.length; i++) { let suma = b[i]; for (let j = 0; j < inputVector.length; j++) { suma += W[i][j] * inputVector[j]; } out.push(suma); }
+      return out;
+    }
+
+    function nnPredictVoltage(T, mH2, sigma, J) {
+      if (!window.H2_INVERSE_MODEL) { return 0.8; }
+      const M = window.H2_INVERSE_MODEL;
+      const xRaw = [ T, Math.log10(mH2 + 1e-30), Math.log10(sigma + 1e-30), J ];
+      let a = xRaw.map((v, i) => (v - M.mean_x[i]) / M.std_x[i]);
+      for (let layerIndex = 0; layerIndex < M.layers.length; layerIndex++) {
+        let z = denseForward(a, M.layers[layerIndex]);
+        a = (layerIndex < M.layers.length - 1) ? z.map(v => activarNN(v, M.activation)) : z;
+      }
+      return a[0] * M.std_y[0] + M.mean_y[0];
+    }
+
+    function generarCurvaIA() {
+      let T = parseFloat(document.getElementById('inputTemp').value);
+      let mH2 = parseFloat(document.getElementById('inputmH2').value);
+      let sigma = parseFloat(document.getElementById('inputSigmaObj').value);
+
+      let curvaVI = []; let curvaPI = [];
+      let maxP = 0; let maxI = 0; 
+
+      for(let i = 0; i <= 30; i += 0.2) {
+        let V = nnPredictVoltage(T, mH2, sigma, i / AREA_ACTIVA_M2);
+        if (V < 0.70) break;
+        
+        let P = V * i;
+        if (P > maxP) { maxP = P; maxI = i; } 
+
+        curvaVI.push({ x: i, y: V });
+        curvaPI.push({ x: i, y: P });
+      }
+
+      graficaCurvaIA.data.datasets[0].data = curvaVI;
+      graficaPotenciaIA.data.datasets[0].data = curvaPI;
+      graficaPotenciaIA.data.datasets[1].data = [{ x: maxI, y: maxP }];
+
+      graficaCurvaIA.update();
+      graficaPotenciaIA.update();
+    }
+
+    async function enviarParametrosESP32() {
+      if (!rxCharacteristic) return;
+
+      if (apagadoSeguroWebActivo) {
+        escribirConsola(`<span style="color:#ff5252;"><b>Sistema en APAGADO SEGURO. Pulsa START para reanudar.</b></span>`);
+        return;
+      }
+
+      let modo = document.querySelector('input[name="modo_control"]:checked').value;
+      let cmd = "";
+
+      if (modo === "0") {
+          cmd = `IA,${document.getElementById('inputTemp').value},${document.getElementById('inputmH2').value},${document.getElementById('inputSigmaObj').value}\n`;
+          escribirConsola(`<span style="color: #d288f0;"><b>📡 Transmitiendo a IA -> T: ${formatearDecimalVisual(document.getElementById('inputTemp').value)}°C | H2: ${formatearDecimalVisual(document.getElementById('inputmH2').value)} kg/s | σ: ${formatearDecimalVisual(document.getElementById('inputSigmaObj').value)} S/m</b></span>`);
+      } else {
+          cmd = `FIX,${document.getElementById('inputVoltajeFijo').value}\n`;
+          escribirConsola(`<span style="color: #4CAF50;"><b>📡 Transmitiendo -> Voltaje Fijo: ${formatearDecimalVisual(document.getElementById('inputVoltajeFijo').value)} V</b></span>`);
+      }
+
+      await rxCharacteristic.writeValue(new TextEncoder().encode(cmd));
+    }
+
+    async function enviarComandoSeguroESP32(cmd) {
+      if (!rxCharacteristic) { escribirConsola(`<span style="color:#ff5252;"><b>⚠ No hay conexión BLE activa.</b></span>`); return false; }
+      try { await rxCharacteristic.writeValue(new TextEncoder().encode(cmd + "\n")); return true; } 
+      catch (error) { escribirConsola(`<span style="color:#ff5252;"><b>⚠ Error enviando comando: ${cmd}</b></span>`); return false; }
+    }
+
+    async function activarApagadoSeguroWeb() {
+      ultimoModoAntesOFF = document.querySelector('input[name="modo_control"]:checked').value;
+      apagadoSeguroWebActivo = true;
+
+      document.getElementById("panelModoGlobal").classList.add("modo-seguro-activo");
+      document.getElementById("cajaObjetivo").classList.add("modo-seguro-activo");
+      document.getElementById("lblVobj").innerText = "OFF"; document.getElementById("lblPWM").innerText = "0";
+
+      document.getElementById("btnApagadoSeguro").disabled = true; document.getElementById("btnStartSeguro").disabled = false;
+      document.getElementById("btnEnviarParams").disabled = true; document.getElementById("btnAplicarFijo").disabled = true;
+
+      graficaCurvaIA.data.datasets[1].data = [];
+      graficaCurvaIA.update('none');
+
+      actualizarInterfazEstado(2);
+      const enviado = await enviarComandoSeguroESP32("SAFE_OFF");
+      if (enviado) escribirConsola(`<span style="color:#ff5252;"><b> APAGADO SEGURO ACTIVADO: el ESP32 debe bajar el PWM gradualmente hasta 0.</b></span>`);
+    }
+
+    async function reanudarSistemaWeb() {
+      if (!apagadoSeguroWebActivo) return;
+      const enviado = await enviarComandoSeguroESP32("SAFE_START");
+      if (!enviado) return;
+      
+      apagadoSeguroWebActivo = false;
+      document.getElementById("panelModoGlobal").classList.remove("modo-seguro-activo");
+      document.getElementById("cajaObjetivo").classList.remove("modo-seguro-activo");
+
+      document.getElementById("btnApagadoSeguro").disabled = false; document.getElementById("btnStartSeguro").disabled = true;
+      document.getElementById("btnEnviarParams").disabled = false; document.getElementById("btnAplicarFijo").disabled = false;
+
+      const radioAnterior = document.querySelector(`input[name="modo_control"][value="${ultimoModoAntesOFF}"]`);
+      if (radioAnterior) radioAnterior.checked = true;
+
+      cambiarModoInterfaz(); generarCurvaIA();
+      setTimeout(() => { enviarParametrosESP32(); }, 250);
+      escribirConsola(`<span style="color:#28a745;"><b>▶ START enviado: se reanuda el modo anterior con rampa desde el microcontrolador.</b></span>`);
+    }
+
+    async function conectarBluetooth() {
+      try {
+        device = await navigator.bluetooth.requestDevice({ filters: [{ name: 'ESP32_BUCK' }], optionalServices: [SERVICE_UUID] });
+        device.addEventListener('gattserverdisconnected', onDesconexion);
+        const server = await device.gatt.connect();
+        const txCharacteristic = await (await server.getPrimaryService(SERVICE_UUID)).getCharacteristic(TX_UUID);
+        await txCharacteristic.startNotifications(); 
+        
+        let textoAcumulado = "";
+        txCharacteristic.addEventListener('characteristicvaluechanged', (event) => {
+            textoAcumulado += new TextDecoder().decode(event.target.value);
+            let paquetes = textoAcumulado.split('\n');
+            textoAcumulado = paquetes.pop();
+            paquetes.forEach(paquete => { if (paquete.trim().length > 0) procesarMultiplesDatos(paquete); });
+        });
+
+        rxCharacteristic = await (await server.getPrimaryService(SERVICE_UUID)).getCharacteristic(RX_UUID);
+
+        document.getElementById('estado').innerText = 'Conectado'; document.getElementById('estado').style.color = '#28a745';
+        document.getElementById('btnConectar').disabled = true; document.getElementById('btnDesconectar').disabled = false; 
+        document.getElementById('btnEnviarParams').disabled = false; document.getElementById('btnAplicarFijo').disabled = false;
+        document.getElementById('btnApagadoSeguro').disabled = false; document.getElementById('btnStartSeguro').disabled = true;
+
+        iniciarCronometro(); gestionarAnimacionPasos();
+        escribirConsola("Sistema Conectado al Emulador.");
+      } catch (error) { alert("Error de conexión BLE."); }
+    }
+
+    function procesarMultiplesDatos(tramaCompleta) {
+        let gruposDatos = tramaCompleta.split(';');
+        let voutFinal = 0, ioutFinal = 0, pwmFinal = 0, potenciaFinal = 0, vobjFinal = 0;
+        let huboDatosValidos = false;
+        let ts = new Date().toLocaleTimeString();
+        let modoActual = document.querySelector('input[name="modo_control"]:checked').value;
+
+        gruposDatos.forEach(datoStr => {
+            let partes = datoStr.trim().split(',');
+            if (partes.length >= 3) {
+                let vout = parseFloat(partes[0]), iout = parseFloat(partes[1]), pwm = parseInt(partes[2]);
+                let potencia = vout * iout;
+                let vobj = 0.0;
+
+                if (!apagadoSeguroWebActivo) {
+                    vobj = (modoActual === "0") ? nnPredictVoltage(parseFloat(document.getElementById('inputTemp').value), parseFloat(document.getElementById('inputmH2').value), parseFloat(document.getElementById('inputSigmaObj').value), iout / AREA_ACTIVA_M2) : parseFloat(document.getElementById('inputVoltajeFijo').value);
+                }
+
+                let t_seg_puro = ((Date.now() - tiempoInicio) / 1000).toFixed(2);
+                datosCSV += `${ts},${t_seg_puro},${vout},${iout},${vobj},${pwm},${potencia},${modoActual}\n`;
+                let seg = t_seg_puro;
+
+                if (iout >= 0.01) {
+                    graficaResistencia.data.labels.push(seg); graficaResistencia.data.datasets[0].data.push(vout / iout);
+                    if (graficaResistencia.data.labels.length > 40) { graficaResistencia.data.labels.shift(); graficaResistencia.data.datasets[0].data.shift(); }
+                }
+
+                graficaDatos.data.labels.push(seg); graficaDatos.data.datasets[0].data.push(vout); graficaDatos.data.datasets[1].data.push(iout); graficaDatos.data.datasets[2].data.push(vobj);
+                graficaPotencia.data.labels.push(seg); graficaPotencia.data.datasets[0].data.push(potencia);
+
+                if (graficaDatos.data.labels.length > 40) { 
+                    graficaDatos.data.labels.shift(); graficaDatos.data.datasets.forEach(d => d.data.shift()); 
+                    graficaPotencia.data.labels.shift(); graficaPotencia.data.datasets[0].data.shift(); 
+                }
+
+                graficaHistorica.data.labels.push(seg); 
+                graficaHistorica.data.datasets[0].data.push(vout); 
+                graficaHistorica.data.datasets[1].data.push(iout);
+                graficaHistorica.data.datasets[2].data.push(vobj); 
+
+                voutFinal = vout; ioutFinal = iout; pwmFinal = pwm; potenciaFinal = potencia; vobjFinal = vobj;
+                huboDatosValidos = true;
+            }
+        });
+
+        if (huboDatosValidos) {
+            if (voutFinal < 0.60) document.getElementById('cajaVout').classList.add('alarma-activa'); else document.getElementById('cajaVout').classList.remove('alarma-activa');
+            document.getElementById('lblVout').innerText = formatearFijoVisual(voutFinal, 3) + " V"; 
+            document.getElementById('lblIout').innerText = formatearFijoVisual(ioutFinal, 3) + " A";
+            document.getElementById('lblPotencia').innerText = formatearFijoVisual(potenciaFinal, 2) + " W"; 
+            document.getElementById('lblVobj').innerText = apagadoSeguroWebActivo ? "OFF" : formatearFijoVisual(vobjFinal, 3) + " V";
+            document.getElementById('lblPWM').innerText = apagadoSeguroWebActivo ? "0" : pwmFinal;
+
+            escribirConsola(`[${ts}] -> Vout: ${formatearFijoVisual(voutFinal, 3)}V | Iout: ${formatearFijoVisual(ioutFinal, 3)}A | PWM: ${pwmFinal}`);
+
+            if (!apagadoSeguroWebActivo) {
+                graficaCurvaIA.data.datasets[1].data = [{ x: ioutFinal, y: voutFinal }];
+                graficaCurvaIA.update('none');
+            } else {
+                graficaCurvaIA.data.datasets[1].data = [];
+                graficaCurvaIA.update('none');
+            } 
+
+            if (!bufferActualizacionPendiente) {
+                bufferActualizacionPendiente = true;
+                requestAnimationFrame(() => {
+                    graficaDatos.update('none'); 
+                    graficaPotencia.update('none'); 
+                    graficaResistencia.update('none');
+                    
+                    if (graficaHistorica.data.labels.length > 3000) {
+                        graficaHistorica.data.labels.splice(0, 100);
+                        graficaHistorica.data.datasets[0].data.splice(0, 100);
+                        graficaHistorica.data.datasets[1].data.splice(0, 100);
+                        graficaHistorica.data.datasets[2].data.splice(0, 100);
+                    }
+                    graficaHistorica.update('none');
+                    bufferActualizacionPendiente = false;
+                });
+            }
+        }
+    }
+
+    function onDesconexion() {
+      document.getElementById('estado').innerText = '🔴 Desconectado'; document.getElementById('estado').style.color = '#dc3545';
+      document.getElementById('btnConectar').disabled = false; document.getElementById('btnDesconectar').disabled = true;
+      document.getElementById('btnApagadoSeguro').disabled = true; document.getElementById('btnStartSeguro').disabled = true;
+      detenerCronometro(); actualizarInterfazEstado(-1);
+      if(intervaloAnimacionPasos) clearInterval(intervaloAnimacionPasos);
+      escribirConsola("❌ Conexión terminada.");
+    }
+
+    function escribirConsola(txt) { 
+        let c = document.getElementById('monitorSerie'); 
+        c.innerHTML += txt + "<br>"; 
+        let lineas = c.innerHTML.split('<br>');
+        if (lineas.length > 200) c.innerHTML = lineas.slice(lineas.length - 200).join('<br>');
+        c.scrollTop = c.scrollHeight; 
+    }
+
+    function desconectarBluetooth() { if (device && device.gatt.connected) device.gatt.disconnect(); }
+    function iniciarCronometro() { tiempoInicio = Date.now(); intervaloCronometro = setInterval(() => { let d = Math.floor((Date.now() - tiempoInicio) / 1000); document.getElementById('cronometro').innerText = `${String(Math.floor(d/3600)).padStart(2,'0')}:${String(Math.floor((d%3600)/60)).padStart(2,'0')}:${String(d%60).padStart(2,'0')}`; }, 1000); }
+    function detenerCronometro() { clearInterval(intervaloCronometro); }
+    function descargarCSV() { let e = document.createElement('a'); e.href = window.URL.createObjectURL(new Blob([datosCSV], { type: 'text/csv' })); e.download = 'datos_emulador_historico.csv'; e.click(); }
+    function descargarPNG(chartId, filename) { let canvas = document.getElementById(chartId); let link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = filename; link.click(); }
+    function descargarPuntosCSV() {
+        if (puntosExperimentales.length === 0) { alert("No hay puntos experimentales registrados para descargar."); return; }
+        let csvContent = "Corriente(A),Voltaje(V)\n";
+        puntosExperimentales.forEach(punto => { csvContent += `${punto.x},${punto.y}\n`; });
+        let e = document.createElement('a'); e.href = window.URL.createObjectURL(new Blob([csvContent], { type: 'text/csv' })); e.download = 'puntos_experimentales.csv'; e.click();
+    }  
+
+    const RETRASO = 1000; 
+    function configurarInput(inputId, sliderId, min, max, callbackExtra) {
+        const input = document.getElementById(inputId); const slider = document.getElementById(sliderId); let timer;
+        const formatearValor = (valor) => {
+            const numero = parseFloat(valor);
+            if (inputId === "inputmH2") return numero.toExponential(3);
+            if (inputId === "inputSigmaObj") return numero.toFixed(3);
+            return valor;
+        };
+        input.value = formatearValor(input.value);
+        actualizarInputVisual(input);
+        slider.addEventListener("input", (e) => { input.value = formatearValor(e.target.value); actualizarInputVisual(input); input.classList.remove("input-error"); if(callbackExtra) callbackExtra(); });
+        input.addEventListener("keydown", () => { clearTimeout(timer); input.classList.remove("input-error"); });
+        input.addEventListener("keyup", () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                let val = parseFloat(input.value); let valMin = min === "dynamic" ? parseFloat(slider.min) : min; let valMax = max === "dynamic" ? parseFloat(slider.max) : max;
+                if (isNaN(val) || val < valMin || val > valMax) input.classList.add("input-error"); 
+                else { input.classList.remove("input-error"); slider.value = val; input.value = formatearValor(val); actualizarInputVisual(input); if(callbackExtra) callbackExtra(); }
+            }, RETRASO);
+        });
+        input.addEventListener("blur", () => actualizarInputVisual(input));
+    }
+
+    configurarInput("inputTemp", "sliderTemp", 690, 860, calcularConductividad);
+    configurarInput("inputmH2", "slidermH2", 6.126288e-11, 8.160303e-10, generarCurvaIA);
+    configurarInput("inputSigmaObj", "sliderSigma", "dynamic", "dynamic", generarCurvaIA);
+    configurarInput("inputVoltajeFijo", "sliderVoltajeFijo", 0.00, 1.20);
+
+    window.addEventListener('DOMContentLoaded', (event) => { 
+      cambiarModoInterfaz(); 
+      gestionarAnimacionPasos(); 
+      calcularConductividad();
+    });
+  </script>
+</body>
+</html>
